@@ -3,7 +3,8 @@ import {X} from 'lucide-react';
 const topics=[
   ['Behavioral anomaly detection','Deviance compares each event with trusted user, peer, or organization history. Isolation Forest and the attack classifier remain the primary detectors.'],
   ['Risk score','Overall danger from anomaly evidence, malicious-class probability, behavioral deviation, and resource criticality.'],
-  ['Anomaly score','Isolation Forest output measuring how unusual the 12-feature vector is compared with learned normal behavior.'],
+  ['Anomaly score','Isolation Forest output measuring how unusual the 24-feature vector is compared with normal-only training data.'],
+  ['Sequence score','GRU reconstruction error measuring whether an entity’s current event is unexpected given its preceding event sequence.'],
   ['Classifier confidence','Certainty about the predicted attack class. It is separate from risk and low-confidence predictions remain visible.'],
   ['Cold start','When trusted user history is insufficient, peer or global behavior supplies the baseline with lower confidence.'],
   ['Concept drift','A statistically significant change between trusted reference and current windows. Drift is reviewed; it does not activate a new model.'],

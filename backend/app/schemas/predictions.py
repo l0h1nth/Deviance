@@ -11,7 +11,10 @@ class FeatureContribution(BaseModel):
 
 class PredictionResponse(BaseModel):
     event_id: str
+    entity_id: str
+    entity_type: str
     anomaly_score: float = Field(ge=0, le=1)
+    sequence_anomaly_score: float = Field(ge=0, le=1)
     predicted_attack: str
     display_attack: str
     class_probabilities: dict[str, float]
@@ -29,6 +32,7 @@ class PredictionResponse(BaseModel):
     model_version: str
     feature_schema_version: str
     alert_id: int | None = None
+    incident_event_count: int
     latency_ms: float
     drift_detected: bool
     user_id: str

@@ -7,7 +7,7 @@ from helpers import event
 
 
 def payload(**changes):
-    data=event(event_id=f"api-{uuid.uuid4().hex}",**changes).model_dump(mode="json",exclude={"ground_truth_label"})
+    data=event(event_id=f"api-{uuid.uuid4().hex}",**changes).model_dump(mode="json")
     return data
 
 
@@ -34,7 +34,15 @@ def test_ingestion_alert_and_analyst_feedback():
         result=None
         for i in range(7):
             item=payload(authentication_result="failure" if i<6 else "success",device_id="unknown-attack-device",
-                         device_fingerprint="malicious-fingerprint-999",source_ip="198.51.100.200")
+                         claimed_device_id="d1", device_fingerprint="malicious-fingerprint-999",
+                         device_mac_hash="malicious-mac-999", source_ip="198.51.100.200",
+                         country="Germany", city="Berlin", latitude=52.52, longitude=13.405,
+                         event_type="login" if i<6 else "admin_action",
+                         auth_method="password" if i<6 else "not_applicable",
+                         resource_id="prod-console", resource_type="infrastructure", resource_sensitivity=1.0,
+                         destination_host="prod-console.internal", network_protocol="ssh", destination_port=22,
+                         command_sequence=["remote_exec", "dump_config"], bytes_uploaded=8_000_000,
+                         bytes_downloaded=25_000_000, is_privileged_action=True)
             response=client.post("/api/events/ingest",json=item,headers=headers);assert response.status_code==200,response.text;result=response.json()
         assert 0<=result["risk_score"]<=100 and result["predicted_attack"]
         alerts=client.get("/api/alerts",headers=headers).json();assert alerts

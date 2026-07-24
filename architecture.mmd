@@ -1,36 +1,33 @@
 flowchart LR
-  subgraph Data[Data and training]
-    SG[Synthetic Log Generator] --> RAW[(Versioned JSONL splits)]
-    RAW --> TF[Time-aware Feature Pipeline]
-    TF --> IFT[Isolation Forest Training]
-    TF --> RFT[Weighted Random Forest Training]
-    IFT --> AR[(Model Artifact Store)]
-    RFT --> AR
-    AR --> CMP[Candidate Performance Gate]
-    CMP -->|approved| ACTIVE[Active Model Bundle]
+  subgraph Offline[Offline generation and training]
+    GEN[Entity behavioral generator] --> EVENTS[(Unlabeled event JSONL)]
+    GEN --> LABELS[(Ground-truth sidecars)]
+    EVENTS --> FE[24-feature pipeline]
+    LABELS --> JOIN[Offline label join]
+    FE --> NORMAL[Normal-only rows]
+    NORMAL --> SCALE[Robust scaler]
+    SCALE --> IF[Isolation Forest]
+    SCALE --> GRU[GRU sequence reconstruction]
+    JOIN --> RF[Balanced Random Forest]
+    RF --> CAL[Validation sigmoid calibration]
+    IF --> BUNDLE[(Schema v2 model bundle)]
+    GRU --> BUNDLE
+    CAL --> BUNDLE
   end
 
-  subgraph Runtime[Real-time inference]
-    CLIENT[Stream Simulator / Log Source] --> API[FastAPI Ingestion API]
-    API --> VALID[Event Parser and Validator]
-    VALID --> FP[Feature Registry and Pipeline]
-    PROFILES[(Behavioral Profile Store)] <--> FP
-    FP --> IF[Isolation Forest]
-    FP --> RF[Attack Classifier]
-    IF --> RISK[Explainability and Risk Engine]
-    RF --> RISK
-    RISK --> DB[(Event / Prediction / Alert Store)]
-    RISK --> DRIFT[Concept Drift Monitor]
-    RISK --> SSE[Server-Sent Events]
-    SSE --> UI[React Analyst Dashboard]
+  subgraph Runtime[Near-real-time scoring]
+    SOURCE[Auth / API / device telemetry] --> VALIDATE[Pydantic validation]
+    VALIDATE --> PROFILE[Entity → device → peer → global baseline]
+    PROFILE --> LIVEFE[Same 24-feature pipeline]
+    BUNDLE --> LIVEFE
+    LIVEFE --> SCORE[IF + GRU + calibrated RF]
+    SCORE --> RISK[Weighted risk + explanations]
+    RISK --> INCIDENT[15-minute incident correlation]
+    INCIDENT --> DB[(Events / predictions / incidents / feedback)]
+    RISK --> DRIFT[Trusted-only drift windows]
+    INCIDENT --> SSE[Authenticated SSE]
+    SSE --> UI[React SOC dashboard]
+    UI --> FEEDBACK[Analyst disposition]
+    FEEDBACK --> DB
+    FEEDBACK --> PROFILE
   end
-
-  ACTIVE --> IF
-  ACTIVE --> RF
-  UI --> FEEDBACK[Analyst Feedback]
-  FEEDBACK --> DB
-  FEEDBACK --> TRUST[Trusted Adaptation Queue]
-  TRUST --> PROFILES
-  DRIFT --> REVIEW[Controlled Retraining Review]
-  REVIEW --> TF
-

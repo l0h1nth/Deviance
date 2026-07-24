@@ -1,9 +1,10 @@
 export type Page='overview'|'alerts'|'model'|'drift'|'users'|'investigation';
 
 export type Alert = {
-  id:number;timestamp:string;user_id:string;device_id:string;predicted_attack:string;display_attack:string;
-  risk_score:number;severity:string;anomaly_score:number;classifier_confidence:number;confidence:number;
+  id:number;timestamp:string;entity_id:string;entity_type:string;user_id:string;device_id:string;predicted_attack:string;display_attack:string;
+  risk_score:number;severity:string;anomaly_score:number;sequence_anomaly_score:number;classifier_confidence:number;confidence:number;
   status:string;location:string;baseline_type:string;model_version:string;explanation:string;
+  incident_key?:string;incident_event_count:number;
 };
 
 export type FeatureEvidence={feature:string;value:number;baseline:number;deviation:number;description:string};
@@ -20,18 +21,19 @@ export type Metrics = {
   events_analyzed:number;total_alerts:number;unresolved_alerts:number;open_alerts:number;
   investigating_alerts:number;reviewed_alerts:number;critical_alerts:number;
   analyst_false_positive_rate_24h:number;holdout_false_positive_rate:number;
+  holdout_alert_rate:number;top_1_percent_precision:number;top_1_percent_recall:number;alerts_per_10000:number;
   average_inference_latency_ms:number;attacks_by_type:Record<string,number>;risk_trend:{id:number;risk:number}[];
 };
 
 export type LiveEvent={
-  event_id:string;timestamp:string;user_id:string;device_id:string;event_type:string;
+  event_id:string;timestamp:string;entity_id:string;entity_type:string;user_id:string;device_id:string;event_type:string;
   location:{city:string;country:string;latitude?:number;longitude?:number};authentication_result:string;
-  predicted_attack:string;display_attack?:string;anomaly_score:number;classifier_confidence:number;
+  predicted_attack:string;display_attack?:string;anomaly_score:number;sequence_anomaly_score:number;classifier_confidence:number;
   class_probabilities:Record<string,number>;risk_score:number;severity:string;latency_ms:number;
   features:Record<string,number>;feature_evidence:FeatureEvidence[];baseline_type:string;baseline_confidence:number;
   model_version:string;feature_schema_version:string;top_contributing_features:FeatureEvidence[];
   risk_composition:Record<string,number>;explanation:string;cold_start:boolean;alert_id?:number|null;
-  event:Record<string,any>;
+  incident_event_count:number;event:Record<string,any>;
 };
 
 export type SimulationStatus={status:string;scenario:string|null;interval_ms:number|null;event_count:number;processed_events:number;alert_count:number;started_at:string|null;stopped_at:string|null;last_event_id:string|null;last_error:string|null};

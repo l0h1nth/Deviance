@@ -35,12 +35,17 @@ def overview(db: Session = Depends(get_db)):
     trend_rows = list(db.scalars(select(PredictionRecord).order_by(desc(PredictionRecord.id)).limit(50)))
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
     holdout_fpr = float(bundle.metrics.get("test", {}).get("false_positive_rate", 0))
+    holdout = bundle.metrics.get("test", {}); budget = holdout.get("top_1_percent", {})
     return {"events_analyzed": events_analyzed, "total_alerts": total_alerts,
             "unresolved_alerts": unresolved_alerts, "open_alerts": open_alerts,
             "investigating_alerts": investigating_alerts, "reviewed_alerts": reviewed_alerts,
             "critical_alerts": critical_alerts,
             "analyst_false_positive_rate_24h": false_positive_24h / max(reviewed_24h, 1),
             "holdout_false_positive_rate": holdout_fpr,
+            "holdout_alert_rate": float(holdout.get("alert_rate", 0)),
+            "top_1_percent_precision": float(budget.get("precision", 0)),
+            "top_1_percent_recall": float(budget.get("recall", 0)),
+            "alerts_per_10000": float(holdout.get("alerts_per_10000", 0)),
             "average_inference_latency_ms": round(float(avg_latency), 2), "attacks_by_type": attacks,
             "risk_trend": [{"id": row.id, "risk": row.risk_score} for row in reversed(trend_rows)]}
 
@@ -50,4 +55,5 @@ def model_metrics():
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
     return {"model_version": bundle.version, "feature_schema_version": bundle.feature_schema_version,
             "feature_names": bundle.feature_names, "alert_threshold": bundle.alert_threshold,
-            "anomaly_model": bundle.anomaly_detector.model_metadata(), "metrics": bundle.metrics}
+            "anomaly_model": bundle.anomaly_detector.model_metadata(),
+            "sequence_model": bundle.sequence_detector.model_metadata(), "metrics": bundle.metrics}

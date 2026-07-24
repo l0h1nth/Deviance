@@ -1,14 +1,15 @@
-export const ALL_COLUMNS=['time','identity','device','detection','risk','anomaly_score','confidence','status','location','baseline_type','model_version'] as const;
+export const ALL_COLUMNS=['time','identity','entity_type','device','detection','risk','anomaly_score','sequence_score','confidence','incident_events','status','location','baseline_type','model_version'] as const;
 export type ColumnKey=typeof ALL_COLUMNS[number];
-export const DEFAULT_COLUMNS:ColumnKey[]=['time','identity','device','detection','risk','anomaly_score','confidence','status'];
-export type SavedView={id:string;name:string;search:string;severity:string;visibleColumns:ColumnKey[];sortOrder:'newest'|'oldest';predicate?:'unresolved'|'false_positive'|'low_confidence'|'impossible_travel'|'investigating'};
+export const DEFAULT_COLUMNS:ColumnKey[]=['time','identity','entity_type','detection','risk','sequence_score','incident_events','status'];
+export type SortOrder='risk'|'newest'|'oldest';
+export type SavedView={id:string;name:string;search:string;severity:string;visibleColumns:ColumnKey[];sortOrder:SortOrder;predicate?:'unresolved'|'false_positive'|'low_confidence'|'impossible_travel'|'investigating'};
 type StorageLike={getItem:(key:string)=>string|null;setItem:(key:string,value:string)=>void};
 const COLUMNS_KEY='deviance-visible-columns',VIEWS_KEY='deviance-saved-views';
 
 export const DEFAULT_VIEWS:SavedView[]=[
-  {id:'critical-unresolved',name:'Critical unresolved',search:'',severity:'critical',visibleColumns:DEFAULT_COLUMNS,sortOrder:'newest',predicate:'unresolved'},
+  {id:'critical-unresolved',name:'Critical unresolved',search:'',severity:'critical',visibleColumns:DEFAULT_COLUMNS,sortOrder:'risk',predicate:'unresolved'},
   {id:'false-positives',name:'False positives',search:'',severity:'all',visibleColumns:DEFAULT_COLUMNS,sortOrder:'newest',predicate:'false_positive'},
-  {id:'low-confidence',name:'Low confidence',search:'',severity:'all',visibleColumns:DEFAULT_COLUMNS,sortOrder:'newest',predicate:'low_confidence'},
+  {id:'low-confidence',name:'Low confidence',search:'',severity:'all',visibleColumns:DEFAULT_COLUMNS,sortOrder:'risk',predicate:'low_confidence'},
   {id:'impossible-travel',name:'Impossible travel',search:'impossible travel',severity:'all',visibleColumns:DEFAULT_COLUMNS,sortOrder:'newest',predicate:'impossible_travel'},
   {id:'recent-investigations',name:'Recent investigations',search:'',severity:'all',visibleColumns:DEFAULT_COLUMNS,sortOrder:'newest',predicate:'investigating'},
 ];

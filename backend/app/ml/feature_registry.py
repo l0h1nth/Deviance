@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 
-FEATURE_SCHEMA_VERSION = "1.0.0"
+FEATURE_SCHEMA_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True)
@@ -45,4 +45,3 @@ class FeatureRegistry:
 
 
 registry = FeatureRegistry()
-

@@ -19,7 +19,7 @@ def simulate(scenario: str, interval: float, api_url: str, username: str = "admi
     login = httpx.post(f"{api_url.rstrip('/')}/api/auth/login", json={"username": username, "password": password}, timeout=30)
     login.raise_for_status(); headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     for index, event in enumerate(events):
-        payload = event.model_dump(mode="json", exclude={"ground_truth_label"})
+        payload = event.model_dump(mode="json")
         try:
             response = httpx.post(f"{api_url.rstrip('/')}/api/events/ingest", json=payload, headers=headers, timeout=30)
             response.raise_for_status(); result = response.json()

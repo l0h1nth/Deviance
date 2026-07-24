@@ -63,7 +63,7 @@ class SimulationManager:
                 with SessionLocal() as db:
                     result = PredictionService(db).process(event, trusted_override=self._state["scenario"] == "concept_drift")
                 self._state["processed_events"] += 1
-                self._state["alert_count"] += int(result.get("alert_id") is not None)
+                self._state["alert_count"] += int(result.get("alert_id") is not None and result.get("incident_event_count") == 1)
                 self._state["last_event_id"] = result["event_id"]
                 await event_bus.publish({"type": "scored_event", "data": result})
                 await event_bus.publish({"type": "simulation_status", "data": self.status()})

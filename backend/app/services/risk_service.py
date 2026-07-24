@@ -4,23 +4,23 @@ from app.schemas.events import AccessEvent
 
 
 class RiskService:
-    def __init__(self, anomaly_weight=.45, classifier_weight=.35, deviation_weight=.10, criticality_weight=.10):
-        self.weights = (anomaly_weight, classifier_weight, deviation_weight, criticality_weight)
+    def __init__(self, anomaly_weight=.35, sequence_weight=.25, classifier_weight=.25,
+                 deviation_weight=.10, criticality_weight=.05):
+        self.weights = (anomaly_weight, sequence_weight, classifier_weight, deviation_weight, criticality_weight)
 
     def score(self, inference: dict, scaled_vector: np.ndarray, event: AccessEvent, baseline_confidence: float) -> dict:
-        malicious = max((v for k, v in inference["class_probabilities"].items() if k != "normal"), default=0.0)
+        malicious = max((value for name, value in inference["class_probabilities"].items() if name != "normal"), default=0.0)
         deviation = float(np.clip(np.mean(np.minimum(np.abs(scaled_vector), 5)) / 3, 0, 1))
         criticality = float(np.clip(.75 * event.resource_sensitivity + .25 * event.is_privileged_action, 0, 1))
-        a, c, d, r = self.weights
+        anomaly_weight, sequence_weight, classifier_weight, deviation_weight, criticality_weight = self.weights
         components = {
-            "anomaly": 100 * a * inference["anomaly_score"],
-            "classifier": 100 * c * malicious,
-            "behavioral_deviation": 100 * d * deviation,
-            "resource_criticality": 100 * r * criticality,
+            "behavioral_anomaly": 100 * anomaly_weight * inference["anomaly_score"],
+            "sequence_anomaly": 100 * sequence_weight * inference["sequence_anomaly_score"],
+            "attack_classifier": 100 * classifier_weight * malicious,
+            "profile_deviation": 100 * deviation_weight * deviation,
+            "resource_criticality": 100 * criticality_weight * criticality,
         }
-        raw = sum(components.values())
-        # Cold start affects confidence, not the evidence/risk itself.
-        risk = float(np.clip(raw, 0, 100))
+        risk = float(np.clip(sum(components.values()), 0, 100))
         severity = "low" if risk < 30 else "medium" if risk < 50 else "high" if risk < 70 else "critical"
         model_confidence = float(np.clip((inference["classifier_confidence"] + baseline_confidence) / 2, 0, 1))
         return {"risk_score": round(risk, 2), "severity": severity, "model_confidence": model_confidence,
@@ -29,14 +29,17 @@ class RiskService:
 
     @staticmethod
     def actions(predicted: str, severity: str) -> list[str]:
-        base = ["Review the user and device timeline", "Validate the activity with the account owner"]
+        base = ["Review the complete entity sequence", "Validate the activity with the system or account owner"]
         specific = {
             "brute_force": "Rate-limit authentication and inspect the source session",
+            "credential_stuffing": "Block the source campaign and identify all targeted entities",
             "credential_misuse": "Revoke active sessions and rotate credentials",
-            "lateral_movement": "Isolate the device and inspect destination hosts",
-            "impossible_travel": "Verify travel/VPN context and compare session overlap",
+            "lateral_movement": "Isolate the device and inspect destination hosts and commands",
+            "impossible_travel": "Verify travel/VPN context and compare overlapping sessions",
             "device_spoofing": "Challenge device trust and re-enrol the endpoint",
+            "low_slow_exfiltration": "Review cumulative sensitive transfers and destination ownership",
+            "unknown_anomaly": "Escalate for threat hunting because the sequence does not match a known class",
             "normal": "Monitor for corroborating activity",
         }
         if severity == "critical": base.insert(0, "Escalate immediately to incident response")
-        return [specific.get(predicted, specific["normal"]), *base]
+        return [specific.get(predicted, specific["unknown_anomaly"]), *base]

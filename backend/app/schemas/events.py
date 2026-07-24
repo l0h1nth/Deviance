@@ -5,43 +5,53 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 AttackLabel = Literal[
-    "normal", "brute_force", "credential_misuse", "lateral_movement",
-    "impossible_travel", "device_spoofing",
+    "normal", "brute_force", "credential_misuse", "credential_stuffing",
+    "lateral_movement", "impossible_travel", "device_spoofing", "low_slow_exfiltration",
 ]
+EntityType = Literal["user", "service_account", "edge_device"]
 
 
 class AccessEvent(BaseModel):
+    """Production telemetry contract. Ground-truth labels never cross this boundary."""
+
     model_config = ConfigDict(extra="forbid")
 
     event_id: str = Field(min_length=1, max_length=100)
     timestamp: datetime
-    user_id: str = Field(min_length=1, max_length=100)
+    entity_id: str = Field(min_length=1, max_length=100)
+    entity_type: EntityType
+    user_id: str = Field(min_length=1, max_length=100)  # compatibility/correlation alias
     user_role: str = Field(min_length=1, max_length=80)
     department: str = Field(min_length=1, max_length=80)
     device_id: str = Field(min_length=1, max_length=100)
     claimed_device_id: str = Field(min_length=1, max_length=100)
     operating_system: str = Field(min_length=1, max_length=100)
+    firmware_version: str = Field(min_length=1, max_length=100)
     browser: str = Field(min_length=1, max_length=100)
     user_agent: str = Field(min_length=1, max_length=500)
     device_fingerprint: str = Field(min_length=4, max_length=256)
+    device_mac_hash: str = Field(min_length=4, max_length=128)
     source_ip: str = Field(min_length=3, max_length=64)
     country: str = Field(min_length=2, max_length=80)
     city: str = Field(min_length=1, max_length=100)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    event_type: Literal["login", "resource_access", "file_download", "admin_action"]
+    event_type: Literal["login", "resource_access", "file_download", "admin_action", "api_call", "device_connection"]
     authentication_result: Literal["success", "failure", "not_applicable"]
+    auth_method: Literal["password", "token", "certificate", "biometric", "not_applicable"]
     resource_id: str = Field(min_length=1, max_length=120)
     resource_type: str = Field(min_length=1, max_length=80)
     resource_sensitivity: float = Field(ge=0, le=1)
     destination_host: str = Field(min_length=1, max_length=180)
+    network_protocol: Literal["https", "ssh", "rdp", "smb", "mqtt", "opcua", "database", "internal"]
+    destination_port: int = Field(ge=1, le=65535)
+    command_sequence: list[str] = Field(default_factory=list, max_length=50)
     bytes_uploaded: int = Field(ge=0, le=10_000_000_000)
     bytes_downloaded: int = Field(ge=0, le=10_000_000_000)
     session_id: str = Field(min_length=1, max_length=100)
     session_duration_seconds: int = Field(ge=0, le=604800)
     is_vpn: bool
     is_privileged_action: bool
-    ground_truth_label: AttackLabel | None = None
 
     @field_validator("timestamp")
     @classmethod
@@ -54,6 +64,25 @@ class AccessEvent(BaseModel):
         return value.astimezone(timezone.utc)
 
 
+class TrainingLabel(BaseModel):
+    """Offline-only label sidecar joined by event_id during training/evaluation."""
+
+    event_id: str
+    label: AttackLabel
+    scenario_id: str
+    sequence_id: str
+
+
+class LabeledEvent(BaseModel):
+    event: AccessEvent
+    label: AttackLabel
+    scenario_id: str
+    sequence_id: str
+
+    def sidecar(self) -> TrainingLabel:
+        return TrainingLabel(event_id=self.event.event_id, label=self.label,
+                             scenario_id=self.scenario_id, sequence_id=self.sequence_id)
+
+
 class EventBatch(BaseModel):
     events: list[AccessEvent] = Field(min_length=1, max_length=500)
-

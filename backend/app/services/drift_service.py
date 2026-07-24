@@ -33,9 +33,10 @@ class DriftService:
     def observe(self, subject_id: str, values: dict[str, float]) -> list[DriftEventRecord]:
         detected = []
         monitored = ["login_hour_deviation", "location_novelty_score", "new_device_score",
-                     "download_volume_zscore", "session_duration_zscore", "anomaly_score"]
+                     "download_volume_zscore", "resource_novelty_score", "privilege_expansion_score",
+                     "sequence_anomaly_score", "anomaly_score"]
         for feature in monitored:
-            key = f"{subject_id}:{feature}"; window = self._windows[key]; window.append(float(values[feature]))
+            key = f"{subject_id}:{feature}"; window = self._windows[key]; window.append(float(values.get(feature, 0.0)))
             if len(window) < 40: continue
             old, new = list(window)[:20], list(window)[20:]
             magnitude = abs(mean(new) - mean(old)) / max(pstdev(old), .5)

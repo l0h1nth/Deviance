@@ -24,7 +24,7 @@ def test_simulation_start_stop_model_status_and_notifications():
         assert stopped.status_code == 200 and stopped.json()["status"] in {"stopped", "completed"}
         status = client.get("/api/models/status", headers=headers).json()
         assert status["model_ready"] and status["artifact_status"] == "loaded"
-        assert status["feature_schema_version"] == "1.0.0" and "average_inference_latency_ms" in status
+        assert status["feature_schema_version"] == "2.0.0" and "average_inference_latency_ms" in status
         notifications = client.get("/api/notifications", headers=headers).json()["notifications"]
         assert any(item["type"] == "simulation_status" for item in notifications)
 
@@ -50,7 +50,12 @@ def test_metrics_consistency_enriched_alert_and_feedback():
             payload = event(event_id=f"workflow-{uuid.uuid4().hex}",
                 authentication_result="failure" if index < 6 else "success",
                 device_id="workflow-unknown-device", device_fingerprint="workflow-malicious-fingerprint",
-                source_ip="198.51.100.221").model_dump(mode="json", exclude={"ground_truth_label"})
+                device_mac_hash="workflow-malicious-mac", source_ip="198.51.100.221",
+                country="Germany", city="Berlin", latitude=52.52, longitude=13.405,
+                resource_id="prod-console", resource_type="infrastructure", resource_sensitivity=1.0,
+                destination_host="prod-console.internal", network_protocol="ssh", destination_port=22,
+                command_sequence=["remote_exec", "dump_config"], bytes_uploaded=8_000_000,
+                bytes_downloaded=25_000_000, is_privileged_action=True).model_dump(mode="json")
             response = client.post("/api/events/ingest", json=payload, headers=headers)
             assert response.status_code == 200
             latest = response.json()
@@ -61,7 +66,8 @@ def test_metrics_consistency_enriched_alert_and_feedback():
         assert metrics["unresolved_alerts"] == sum(row["status"] in {"open", "investigating", "confirmed_threat"} for row in alerts)
         assert sum(metrics["attacks_by_type"].values()) == metrics["total_alerts"]
         detail = client.get(f"/api/alerts/{latest['alert_id']}", headers=headers).json()
-        assert len(detail["feature_evidence"]) == 12 and detail["risk_composition"]
+        assert len(detail["feature_evidence"]) == 24 and detail["risk_composition"]
+        assert "sequence_anomaly_score" in detail and "incident_event_count" in detail
         assert detail["risk_score"] != detail["classifier_confidence"] and "anomaly_score" in detail
         update = client.patch(f"/api/alerts/{latest['alert_id']}", headers=headers,
             json={"status": "investigating", "analyst": "workflow-test", "comment": "triage started"})

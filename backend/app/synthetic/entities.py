@@ -10,14 +10,24 @@ class Office:
 
 
 @dataclass
-class SyntheticUser:
-    user_id: str
+class SyntheticEntity:
+    entity_id: str
+    entity_type: str
     role: str
     department: str
     office: Office
     remote: bool
     shift_hour: int
     devices: list[dict]
+    auth_methods: list[str]
+
+    @property
+    def user_id(self) -> str:
+        return self.entity_id
+
+
+# Compatibility name for the scenario modules and external examples.
+SyntheticUser = SyntheticEntity
 
 
 OFFICES = [
@@ -25,4 +35,3 @@ OFFICES = [
     Office("United Kingdom", "London", 51.5074, -0.1278), Office("Singapore", "Singapore", 1.3521, 103.8198),
     Office("Germany", "Berlin", 52.5200, 13.4050), Office("Australia", "Sydney", -33.8688, 151.2093),
 ]
-

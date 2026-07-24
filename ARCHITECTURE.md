@@ -1,134 +1,118 @@
 # Deviance architecture
 
-## Problem definition
+## Design objective
 
-Deviance detects credential misuse, brute force, lateral movement, impossible travel, and device spoofing by learning how identities and devices normally access systems. It does not consult malicious-IP lists, hashes, CVEs, payload signatures, or domain blocklists. Behavioral rules exist only inside feature generation, safety checks, explanations, and cold-start fallbacks; the Isolation Forest and Random Forest make the primary detection and classification decisions.
+Deviance models normal access and connection behavior for users, service accounts, and edge devices. It detects both point anomalies and event-sequence anomalies, estimates which known attack a finding resembles, and preserves uncertainty when the event is unfamiliar.
 
-## End-to-end event flow
+The core trust boundary is strict: an `AccessEvent` accepted by the live API has no ground-truth field. Offline evaluation joins events to separate `TrainingLabel` sidecars by `event_id`.
 
-1. The reproducible generator creates 120 users, their devices, offices, roles, resources, mostly normal traffic, and labelled multi-event attacks.
-2. Chronological train, validation, test, and demo-stream JSONL files are produced.
-3. Training walks events in timestamp order. Only earlier trusted-normal observations may affect the current feature vector.
-4. A `RobustScaler`, Isolation Forest, weighted Random Forest, feature order, schema version, thresholds, and metrics are saved as one guarded bundle.
-5. The HTTP API validates raw telemetry with Pydantic, selects a user/peer/global baseline, extracts the same ordered vector, and runs both models.
-6. The risk service combines anomaly evidence, malicious-class probability, deviation magnitude, and action criticality into a bounded 0–100 result.
-7. Raw telemetry, its feature vector, prediction, explanation, latency, and any alert are committed together to SQLite.
-8. SSE publishes scored events to the dashboard. Analysts can investigate, disposition, and annotate alerts.
+## Data and leakage controls
 
-The complete diagram is in [architecture.mmd](architecture.mmd).
+The generator creates habitual per-entity behavior with varied shifts, offices, devices, authentication methods, resources, OS/firmware, network protocols, commands, uploads, downloads, and benign look-alikes. It then injects randomized multi-event attack scenarios at 0.5–3% prevalence.
 
-## Synthetic-data design
+The default corpus uses an entity-safe 70/15/15 train/validation/test split. No entity appears in more than one split. Within each split events are chronological. The scaler, profiles, Isolation Forest, and GRU detector fit only normal training rows. The classifier alone uses attack labels. Validation data calibrates class probabilities and fixes the analyst-budget threshold; the test split is evaluation only.
 
-The generator models departments, roles, six international offices, remote/VPN users, administrators, day/evening shifts, multiple devices, normal password mistakes, varied downloads, and resources at several sensitivity levels. Each attack changes multiple correlated fields over multiple events: brute force creates rapid failures and an optional success; misuse combines valid credentials with changed time/device/location/resource volume; lateral movement touches sequential cross-boundary hosts; impossible travel creates close authenticated locations; spoofing reuses a claimed identifier while changing OS, browser, fingerprint, and follow-on access.
+## Event contract
 
-Seeds make datasets reproducible. Scenarios are distributed through historical time so every chronological split contains future-like examples. The training set remains heavily normal and later data never influences earlier features.
+The v2 schema includes entity ID/type, compatibility user ID, role/department, timestamp, source IP and geography, resource and destination, authentication method/result, session duration, command sequence, device fingerprint/MAC hash, OS/firmware/browser, protocol/port, transfer volumes, VPN state, and privileged-action state.
 
-## Raw event schema
+Entity types are `user`, `service_account`, and `edge_device`. Attack sidecar classes are brute force, credential misuse, credential stuffing, lateral movement, impossible travel, device spoofing, and low-and-slow exfiltration.
 
-`AccessEvent` contains event and session IDs; timezone-aware timestamp; user, role, and department; actual/claimed device IDs; OS, browser, user agent, and fingerprint; IP and geolocation; event/authentication fields; resource, sensitivity and destination; transfer volumes and duration; VPN/privileged flags; and an optional synthetic-only label. Coordinates, timestamps, enumerations, string sizes, numeric bounds, request size, and unknown fields are validated. Production inference excludes and never reads the label.
+## Twenty-four behavioral features
 
-## The 12-feature pipeline
+Short-window features:
 
-The versioned registry fixes deterministic order while allowing a new extractor to be registered independently:
+1. Failed logins in one minute
+2. Login attempts in five minutes
+3. Login-hour deviation
+4. New-device score
+5. Device-fingerprint distance
+6. Location novelty
+7. Required travel speed
+8. Unique destination hosts in five minutes
+9. Sensitive-resource access ratio
+10. Download-volume z-score
+11. Session-duration z-score
+12. Successful login after failures
+13. Unique entities per source IP in five minutes
+14. Source-IP failure ratio in five minutes
+15. Authentication-method novelty
+16. Log time since the previous entity event
+17. Concurrent sessions in five minutes
+18. Command-sequence novelty
+19. Resource novelty
+20. Privilege expansion
+21. Protocol/port novelty
+22. Upload-volume z-score
+23. Sensitive downloads in 30 days
+24. Off-hours activity
 
-1. `failed_login_count_1m`
-2. `login_attempt_count_5m`
-3. `login_hour_deviation`
-4. `new_device_score`
-5. `device_fingerprint_distance`
-6. `location_novelty_score`
-7. `required_travel_speed_kmph`
-8. `unique_destination_hosts_5m`
-9. `sensitive_resource_access_ratio`
-10. `download_volume_zscore`
-11. `session_duration_zscore`
-12. `successful_login_after_failures_score`
+The same registry and order are used for training and live inference; schema mismatch returns an explicit conflict rather than silently scoring incorrect vectors.
 
-Every definition includes name, description, type, default, required context, extractor, version, and model-use flags. Extraction returns values plus baseline kind, history count, confidence, profile version, last update, and schema version. NaN/infinity is replaced safely. The model bundle refuses a schema or order mismatch.
+## Baselines and cold start
 
-## Behavioral profiles and cold start
+The baseline hierarchy is entity → device (for edge devices) → entity-type/department/role peer group → organization. Normal-only training priors for peer/global profiles travel inside the signed model bundle, so an empty deployment has behavioral context without importing historical logs. Confidence grows as trusted runtime history replaces the prior. The GRU sequence component contributes zero until three prior events exist. Cold start is reported in the result and explanation rather than hidden.
 
-Inference selects a mature user profile first, a role/department peer profile second, and the organization profile last. With no history it uses conservative global defaults. Baseline confidence grows with trusted sample count; low personal history lowers confidence and appears as `cold_start` in the response rather than making novelty synonymous with malice. Only low-risk, model-normal events update profiles automatically. A false-positive disposition marks an event eligible for later validated adaptation; suspicious unreviewed activity cannot poison a profile.
+Only normal training rows and trusted runtime outcomes update habitual profiles. Confirmed attack-like behavior cannot become “normal” merely by repetition.
 
-## Training and model persistence
+## Models
 
-The Isolation Forest is fit only on training events labelled normal. Its raw decision score is normalized with robust training quantiles. The shared `RobustScaler` is also fitted only on those normal training rows, so labelled attacks cannot influence the anomaly preprocessing contract. The supervised Random Forest uses all scaled training rows with balanced sample weights and `balanced_subsample` class weighting after the chronological split. The bundle stores the models, scaler, exact feature list, schema/model versions, alert threshold, and evaluation results. Loading is limited to the configured artifact directory.
+Isolation Forest is fitted on scaled normal rows and detects tabular point anomalies without attack labels.
 
-The development training endpoint writes a candidate bundle, compares macro F1 and false-positive rate with the active bundle, and activates only if it passes conservative gates. Production would require authenticated approval and a real registry.
+The sequence detector implements GRU reset/update recurrence in a deterministic NumPy recurrent reservoir. A ridge decoder learns to predict the next normal feature vector from up to ten prior entity events. Reconstruction error is normalized from normal-only training errors. This provides genuine gated recurrence without adding a heavyweight deep-learning runtime to the hackathon bundle.
 
-## Evaluation and class imbalance
+The Random Forest is class-balanced, has 240 trees and minimum leaf size two, and is trained on normal plus all known attacks. Per-class one-vs-rest sigmoid calibrators are learned from validation probabilities. If anomaly evidence is very high but no malicious class reaches defensible confidence, the result is `unknown_anomaly`.
 
-Reports include per-class precision/recall/F1, macro and weighted F1, confusion matrix, false-positive and false-negative rates, anomaly ROC-AUC and PR-AUC, sample count, threshold, and average inference latency. Accuracy is included by scikit-learn but is not the decision metric. Validation normal-score quantiles tune a conservative alert threshold. No oversampling occurs before splitting.
+## Risk and explainability
 
-## Real-time inference, risk, and explainability
+Final risk is bounded to 0–100:
 
-Both models evaluate every event. The configurable initial risk composition is 45% normalized anomaly score, 35% highest malicious-class probability, 10% aggregate model-space deviation, and 10% resource/action criticality. Severity bands are low 0–29, medium 30–49, high 50–69, and critical 70–100. Rules never choose the attack class.
-
-Random-Forest feature importance and event-specific scaled deviations rank contributions. Isolation-Forest explanations use deviations from the selected hierarchy baseline. Responses name actual feature values and expected baseline context, list attack probabilities, confidence and versions, state cold start, and provide class-specific analyst actions.
-
-## Real-time simulation and live delivery
-
-`POST /api/simulations/start` creates a bounded in-process simulation task; status and cancellation are exposed through `GET /api/simulations/status` and `POST /api/simulations/stop`. Scenario selection changes only generated telemetry. Every event is reconstructed through the strict `AccessEvent` schema and passed to the same `PredictionService` used by HTTP ingestion: persistence, historical lookup, the 12-feature contract, Isolation Forest, classifier, risk composition, feature explanation, thresholded alert creation, trusted-profile handling, drift observation, and SSE publication all remain in one path.
-
-The process-local event bus broadcasts scored events and simulation state to authenticated SSE clients. The React workspace keeps a bounded 250-event display buffer, derives events-per-second locally, and always reloads metrics and alerts from authoritative API endpoints. A production deployment would replace the in-process task and fan-out with partitioned stream workers and a shared broker.
-
-## Concept drift and feedback
-
-A lightweight two-window detector watches login-hour, location, device, download, duration, and anomaly-score distributions. Significant changes become stored drift events and clear the local detection window. They are not learned automatically. Trusted recent events form the only suitable retraining input. The simulator's `concept_drift` scenario demonstrates a legitimate day-to-evening shift.
-
-Alert states are open, investigating, confirmed threat, false positive, and closed. Every change creates immutable analyst feedback with identity, note, and timestamp. Feedback history appears in alert detail.
-
-## Persistence and entity relationships
-
-SQLite is accessed through SQLAlchemy sessions and small repository/service boundaries. Structured payloads are JSON; no Python object is stored in a database column. Feature vectors have their own schema-versioned records. `profiles` physically stores user, peer, and global variants using a discriminator.
-
-```mermaid
-erDiagram
-  USERS ||--o{ DEVICES : owns
-  USERS ||--o{ EVENTS : generates
-  DEVICES ||--o{ EVENTS : emits
-  EVENTS ||--|| FEATURE_VECTORS : produces
-  EVENTS ||--|| PREDICTIONS : receives
-  PREDICTIONS ||--o| ALERTS : raises
-  ALERTS ||--o{ ANALYST_FEEDBACK : receives
-  USERS ||--o{ USER_PROFILES : summarized_by
-  USER_PROFILES }o--|| PEER_PROFILES : falls_back_to
-  USERS ||--o{ DRIFT_EVENTS : affected_by
-  MODEL_VERSIONS ||--o{ PREDICTIONS : generated
-  USERS { string user_id string role string department }
-  DEVICES { string device_id string user_id string fingerprint int trusted_event_count }
-  EVENTS { string event_id datetime timestamp json raw_event boolean trusted }
-  FEATURE_VECTORS { int event_db_id string feature_schema_version json values json baseline_metadata }
-  PREDICTIONS { float anomaly_score string predicted_attack float risk_score json class_probabilities }
-  ALERTS { int id string status datetime created_at }
-  ANALYST_FEEDBACK { int alert_id string analyst string status string comment }
-  USER_PROFILES { string subject_id int event_count json profile_data int version }
-  PEER_PROFILES { string role_department int event_count json profile_data int version }
-  DRIFT_EVENTS { string subject_id string feature float magnitude datetime detected_at }
-  MODEL_VERSIONS { string version string feature_schema_version boolean active json metrics }
+```text
+100 × (0.35 × Isolation Forest
+     + 0.25 × GRU sequence anomaly
+     + 0.25 × strongest malicious class probability
+     + 0.10 × profile deviation
+     + 0.05 × resource criticality)
 ```
 
-## API and dashboard design
+Validation selects the risk cutoff at the top 1% event budget. Evaluation reports alert precision/recall, normal-event alert rate, top-1% precision/recall, alerts per 10,000 events, per-class precision/recall/F1, and both anomaly PR-AUC values.
 
-Route modules delegate ingestion/scoring to services. Available APIs cover administrator login/identity, health, one/batch ingestion, event filtering, alert filtering/detail/feedback, user profile/timeline, overview/model metrics, drift, training/status, and SSE. CORS is explicit. Signed, expiring HMAC tokens protect API and SSE access. The React/Vite dashboard provides a disclosed hackathon login, behavior posture and model pulse, live/filterable alerts, investigation evidence and disposition, behavior guidance, model evaluation, and drift review.
+Each result includes the observed feature, expected baseline, normalized deviation, model components, plain-language rationale, recommended response, model/schema versions, and baseline/cold-start context.
+
+## Runtime request flow
+
+1. A signed administrator token authenticates ingestion.
+2. Pydantic rejects unknown fields, invalid ranges, naive timestamps, and excessively future timestamps.
+3. The service checks event-id idempotency and loads recent entity/IP history.
+4. It selects an entity/device/peer/global baseline and extracts 24 features.
+5. The active bundle applies the scaler, Isolation Forest, GRU, and calibrated Random Forest.
+6. The risk service composes score, severity, evidence, rationale, and response actions.
+7. Event and prediction records are persisted.
+8. Findings crossing the threshold are correlated by entity, predicted class, and 15-minute bucket. The incident keeps its event count and maximum-risk anchor.
+9. Trusted values feed the drift monitor; scored events and status changes are broadcast through authenticated SSE.
+
+## Persistence
+
+SQLite tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, drift events, and model-run history. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty v2 database.
+
+## Drift
+
+Trusted-only rolling reference/current windows monitor login time, location, device novelty, download volume, resource novelty, privilege expansion, sequence anomaly, and point anomaly. Detected changes are reviewable; they do not trigger automatic blind retraining. The simulator provides both legitimate concept drift and ambiguous insider drift.
 
 ## Scalability path
 
-The local synchronous path prioritizes hackathon clarity. In production:
+The current system deliberately uses SQLite and in-process state for a reproducible solo demo. Scale-out boundaries are already explicit:
 
-- Put Kafka or Redis Streams before ingestion, partitioned by identity to retain per-user ordering and support replay.
-- Store short rolling feature windows and stream coordination in Redis.
-- Move durable events, predictions, feedback, notifications, profiles, and drift records to PostgreSQL behind the existing repository boundaries.
-- Run separately scalable model-serving workers so API concurrency and inference capacity can scale independently.
-- Store signed artifacts in object storage and register versions, schemas, metrics, approvals, and rollback state in a model registry.
-- Run horizontal stateless FastAPI workers behind a load balancer.
-- Replace process-local SSE fan-out with Redis/Kafka-backed WebSocket or SSE gateways.
-- Add OpenTelemetry traces, structured audit logs, Prometheus latency/throughput/drift/model metrics, alerting, dead-letter queues, replay-safe idempotency, and blue/green model rollout.
+- Put Kafka/Redpanda or a durable managed stream before ingestion.
+- Partition by entity ID so sequence order is stable.
+- Keep window/profile state in Redis or a feature store.
+- Replace SQLite with partitioned PostgreSQL/ClickHouse and explicit retention.
+- Serve signed artifacts from a registry and horizontally scale stateless inference workers.
+- Use a durable notification bus/WebSocket tier rather than process-local SSE.
+- Add SSO/RBAC, TLS, rate limits, immutable audit storage, OpenTelemetry, dead-letter/replay, and blue/green model approval.
 
-## Security considerations
+See [SCALABILITY_REPORT.md](SCALABILITY_REPORT.md) for the measured single-process baseline.
 
-Telemetry may contain personal and location data: production requires minimization, encryption, retention controls, RBAC, tenant isolation, audit logs, and jurisdiction review. The included `admin/admin` login and HMAC token are intentionally hackathon-oriented; production must replace them with OIDC/SSO, MFA, granular authorization, credential rotation, and server-side revocation. Artifacts should be signed and loaded from an allowlisted registry. Rate limiting, reverse-proxy body limits, TLS, secret management, and database least privilege are deployment responsibilities. API errors intentionally omit stack traces.
+## Security limitations
 
-## Limitations and future work
-
-Synthetic behavior cannot reproduce all enterprise correlations, and class accuracy—especially rare device spoofing and impossible travel—depends on scenario diversity. The local rolling drift detector is intentionally simpler than River ADWIN. The dashboard has no map tile provider, and its single demo administrator is not a substitute for enterprise identity. SQLite and in-memory SSE are single-node. Future work includes calibrated classifier probabilities, SHAP TreeExplainer caching, richer device/graph features, ADWIN, attack-sequence aggregation, OIDC/MFA/RBAC, PostgreSQL/Redis/Kafka adapters, privacy-preserving retention, human approval for candidate activation, and evaluation on sanitized real telemetry.
+The displayed `admin/admin` credentials are a hackathon requirement, not a production pattern. Joblib is safe only for trusted artifacts. Synthetic metrics do not prove real-world efficacy. Location and identity telemetry require data minimization, encryption, retention limits, and controlled analyst access.

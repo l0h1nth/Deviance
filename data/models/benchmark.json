@@ -1,0 +1,14 @@
+{
+  "model_version": "v20260724-195438",
+  "feature_schema_version": "2.0.0",
+  "events": 1000,
+  "warmup_events": 100,
+  "latency_ms": {
+    "p50": 58.234090502082836,
+    "p95": 79.43782204820307,
+    "p99": 90.14339121997182,
+    "mean": 59.069567535512356
+  },
+  "sequential_throughput_events_per_second": 16.923283671188894,
+  "environment": "single Python process; feature vectors precomputed; per-event scaler + IF + GRU + RF"
+}

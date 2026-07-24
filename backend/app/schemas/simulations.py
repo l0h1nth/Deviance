@@ -4,8 +4,9 @@ from pydantic import BaseModel, Field, model_validator
 
 
 SimulationScenario = Literal[
-    "mixed", "brute_force", "credential_misuse", "lateral_movement",
-    "impossible_travel", "device_spoofing", "cold_start", "concept_drift",
+    "mixed", "brute_force", "credential_misuse", "credential_stuffing", "lateral_movement",
+    "impossible_travel", "device_spoofing", "low_slow_exfiltration", "cold_start",
+    "concept_drift", "insider_drift",
 ]
 
 
@@ -16,6 +17,6 @@ class SimulationStart(BaseModel):
 
     @model_validator(mode="after")
     def drift_requires_two_windows(self):
-        if self.scenario == "concept_drift" and self.event_count < 40:
-            raise ValueError("concept_drift requires at least 40 events to fill both rolling windows")
+        if self.scenario in {"concept_drift", "insider_drift"} and self.event_count < 40:
+            raise ValueError("drift scenarios require at least 40 events to fill both rolling windows")
         return self
