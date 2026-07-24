@@ -34,13 +34,13 @@ export default function App(){
   const select=(alert:Alert)=>{setPage('investigation');api.alert(alert.id).then(setDetail)};
   const update=(status:string)=>detail&&api.updateAlert(detail.id,status).then(()=>api.alert(detail.id).then(setDetail).then(load));
 
-  if(!authReady)return <div className="auth-loading"><span className="brand-symbol"><i/><i/><i/></span><b>DEVIANCE</b></div>;
+  if(!authReady)return <div className="auth-loading"><img src="/deviance-mark.svg" alt=""/><b>DEVIANCE</b></div>;
   if(!user)return <Login onAuthenticated={setUser}/>;
   const logout=()=>{api.logout();setUser(null);setMetrics(null);setAlerts([])};
 
   return <div className="app-frame">
     <aside className="sidebar">
-      <button className="brand" onClick={()=>setPage('overview')}><span className="brand-symbol"><i/><i/><i/></span><strong>deviance</strong></button>
+      <button className="brand" onClick={()=>setPage('overview')}><img src="/deviance-mark.svg" alt="Deviance"/><strong>deviance</strong></button>
       <nav>{navigation.map(([id,Icon,label])=><button key={id} className={page===id?'active':''} onClick={()=>setPage(id as Page)}><Icon/><span>{label}</span>{id==='alerts'&&alerts.length>0?<em>{alerts.length}</em>:null}</button>)}</nav>
       <div className="sidebar-status"><span><i/> Model online</span><small>{model?.model_version||'Awaiting model'}</small></div>
       <button className="collapse-control">‹</button>
