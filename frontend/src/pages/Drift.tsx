@@ -1,0 +1,3 @@
+import {GitCompareArrows} from 'lucide-react';
+export function DriftPage({drift}:{drift:any[]}){return <><header className="page-head"><div><span className="eyebrow">BEHAVIOR CHANGE</span><h1>Concept drift</h1><p>Statistical shifts are quarantined for review—not learned automatically.</p></div></header><section className="panel drift-list">{drift.map(d=><article key={d.id}><GitCompareArrows/><div><b>{d.feature.replaceAll('_',' ')}</b><span>{d.subject_id} · {new Date(d.detected_at).toLocaleString()}</span><p>{d.recommendation}</p></div><strong>{d.magnitude.toFixed(1)}σ</strong></article>)}{!drift.length&&<div className="empty">No significant drift detected. The concept-drift demo fills two rolling windows.</div>}</section></>}
+

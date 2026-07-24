@@ -1,0 +1,36 @@
+flowchart LR
+  subgraph Data[Data and training]
+    SG[Synthetic Log Generator] --> RAW[(Versioned JSONL splits)]
+    RAW --> TF[Time-aware Feature Pipeline]
+    TF --> IFT[Isolation Forest Training]
+    TF --> RFT[Weighted Random Forest Training]
+    IFT --> AR[(Model Artifact Store)]
+    RFT --> AR
+    AR --> CMP[Candidate Performance Gate]
+    CMP -->|approved| ACTIVE[Active Model Bundle]
+  end
+
+  subgraph Runtime[Real-time inference]
+    CLIENT[Stream Simulator / Log Source] --> API[FastAPI Ingestion API]
+    API --> VALID[Event Parser and Validator]
+    VALID --> FP[Feature Registry and Pipeline]
+    PROFILES[(Behavioral Profile Store)] <--> FP
+    FP --> IF[Isolation Forest]
+    FP --> RF[Attack Classifier]
+    IF --> RISK[Explainability and Risk Engine]
+    RF --> RISK
+    RISK --> DB[(Event / Prediction / Alert Store)]
+    RISK --> DRIFT[Concept Drift Monitor]
+    RISK --> SSE[Server-Sent Events]
+    SSE --> UI[React Analyst Dashboard]
+  end
+
+  ACTIVE --> IF
+  ACTIVE --> RF
+  UI --> FEEDBACK[Analyst Feedback]
+  FEEDBACK --> DB
+  FEEDBACK --> TRUST[Trusted Adaptation Queue]
+  TRUST --> PROFILES
+  DRIFT --> REVIEW[Controlled Retraining Review]
+  REVIEW --> TF
+
