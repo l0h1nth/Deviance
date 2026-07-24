@@ -2,7 +2,7 @@ import json
 
 import numpy as np
 
-from app.ml.training import train
+from app.ml.training import featurize_splits, train
 from app.synthetic.attack_generator import generate_attacks
 from app.synthetic.normal_generator import build_users, generate_normal
 
@@ -18,4 +18,11 @@ def test_training_pipeline(tmp_path):
     bundle=train(tmp_path,models,seed=7)
     assert (models/"current.joblib").exists() and bundle.feature_schema_version=="1.0.0"
     assert bundle.metrics["test"]["sample_count"]==len(splits["test"])
-
+    x_train,y_train=featurize_splits(splits)["train"]
+    normal_mask=y_train=="normal"
+    np.testing.assert_allclose(bundle.scaler.center_,np.median(x_train[normal_mask],axis=0))
+    assert bundle.metrics["training_population"]=={
+        "total_rows":len(y_train),"normal_rows":int(normal_mask.sum()),"attack_rows":int((~normal_mask).sum()),
+        "preprocessor_fit":"normal_only","anomaly_detector_fit":"normal_only",
+        "classifier_fit":"normal_and_attack",
+    }

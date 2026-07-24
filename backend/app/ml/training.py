@@ -135,8 +135,12 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     if missing: raise FileNotFoundError(f"Missing datasets: {missing}. Run generate_data.py first.")
     featured = featurize_splits({name: load_jsonl(path) for name, path in paths.items()})
     x_train, y_train = featured["train"]
-    scaler = build_scaler().fit(x_train); scaled_train = scaler.transform(x_train)
-    anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[y_train == "normal"])
+    normal_mask = y_train == "normal"
+    if not np.any(normal_mask): raise ValueError("Training data must contain normal events for anomaly detection")
+    # Keep the entire anomaly pipeline unsupervised and normal-only: even the
+    # shared preprocessing statistics must not learn from labeled attacks.
+    scaler = build_scaler().fit(x_train[normal_mask]); scaled_train = scaler.transform(x_train)
+    anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[normal_mask])
     classifier = AttackClassifier(seed).fit(scaled_train, y_train, compute_sample_weight("balanced", y_train))
     version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bundle = ModelBundle(version, FEATURE_SCHEMA_VERSION, FeaturePipeline.names, scaler, anomaly, classifier, 50.0, {})
@@ -145,6 +149,12 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     validation_metrics = evaluation_metrics(bundle, val_x, val_y)
     bundle.metrics = {"validation": validation_metrics, "test": evaluation_metrics(bundle, *featured["test"]),
                       "threshold_selection": threshold_selection,
+                      "training_population": {
+                          "total_rows": int(len(y_train)), "normal_rows": int(np.sum(normal_mask)),
+                          "attack_rows": int(np.sum(~normal_mask)),
+                          "preprocessor_fit": "normal_only", "anomaly_detector_fit": "normal_only",
+                          "classifier_fit": "normal_and_attack",
+                      },
                       "trained_at": datetime.now(timezone.utc).isoformat(), "feature_count": 12}
     bundle.save(model_dir / artifact_name)
     (model_dir / "metrics.json").write_text(json.dumps(bundle.metrics, indent=2))

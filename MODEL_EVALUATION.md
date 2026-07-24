@@ -1,6 +1,16 @@
 # Model evaluation
 
-Verified after regenerating the chronological synthetic dataset with seed 42 and retraining model `v20260724-141525` on 24 July 2026.
+Verified after regenerating the chronological synthetic dataset with seed 42 and retraining model `v20260724-183431`. Both anomaly preprocessing and Isolation Forest fitting use normal training rows only.
+
+## Training population contract
+
+| Component | Training population |
+|---|---:|
+| RobustScaler | 3,146 normal rows only |
+| Isolation Forest | 3,146 scaled normal rows only |
+| Random Forest | All 3,393 rows: 3,146 normal + 247 labelled attacks |
+
+The unchanged dataset and random seed were used to isolate the preprocessing change. Compared with the earlier mixed-row scaler, normal-only fitting changed 4 of 12 scaler centers and 6 of 12 scales. It changed no Isolation Forest anomaly scores, classifier verdicts, or threshold-50 alert decisions across 940 test events. Composite risk moved by 0.087 points on average and at most 0.985 points. The headline metrics therefore remained unchanged. This is expected because both fitted models are tree-based and invariant to consistent affine feature rescaling; the change still creates a cleaner unsupervised training boundary and more meaningful normal-relative deviation component.
 
 ## Holdout summary
 

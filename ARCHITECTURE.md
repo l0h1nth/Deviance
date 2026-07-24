@@ -52,7 +52,7 @@ Inference selects a mature user profile first, a role/department peer profile se
 
 ## Training and model persistence
 
-The Isolation Forest is fit only on training events labelled normal. Its raw decision score is normalized with robust training quantiles. The supervised Random Forest uses balanced sample weights and `balanced_subsample` class weighting after the chronological split. The common `RobustScaler` is fitted on training data only. The bundle stores the models, scaler, exact feature list, schema/model versions, alert threshold, and evaluation results. Loading is limited to the configured artifact directory.
+The Isolation Forest is fit only on training events labelled normal. Its raw decision score is normalized with robust training quantiles. The shared `RobustScaler` is also fitted only on those normal training rows, so labelled attacks cannot influence the anomaly preprocessing contract. The supervised Random Forest uses all scaled training rows with balanced sample weights and `balanced_subsample` class weighting after the chronological split. The bundle stores the models, scaler, exact feature list, schema/model versions, alert threshold, and evaluation results. Loading is limited to the configured artifact directory.
 
 The development training endpoint writes a candidate bundle, compares macro F1 and false-positive rate with the active bundle, and activates only if it passes conservative gates. Production would require authenticated approval and a real registry.
 

@@ -232,7 +232,7 @@ Capture these after running the demo; binary screenshots are intentionally not c
 
 ## Current evaluation
 
-With seed 42 on the regenerated chronological test split, model `v20260724-141525` produced 0.968 macro F1, 0.992 weighted F1, 0.12% classifier false-positive rate, 0.23% alert false-positive rate at the selected threshold, and 0.742 anomaly PR-AUC. Device spoofing reached 1.00 holdout F1; impossible travel remained the weakest class at 0.833 F1 and 0.75 recall. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for the per-class report, confusion matrix, threshold method, and limitations. Synthetic metrics demonstrate the workflow and must not be treated as production efficacy.
+With seed 42 on the regenerated chronological test split, model `v20260724-183431` produced 0.968 macro F1, 0.992 weighted F1, 0.12% classifier false-positive rate, 0.23% alert false-positive rate at the selected threshold, and 0.742 anomaly PR-AUC. Both the scaler and Isolation Forest are fitted only on the 3,146 normal training rows; the Random Forest is fitted on all 3,393 training rows. Device spoofing reached 1.00 holdout F1; impossible travel remained the weakest class at 0.833 F1 and 0.75 recall. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for the per-class report, confusion matrix, threshold method, normal-only preprocessing experiment, and limitations. Synthetic metrics demonstrate the workflow and must not be treated as production efficacy.
 
 ## Limitations and production path
 
