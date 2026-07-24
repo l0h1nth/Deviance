@@ -108,6 +108,8 @@ The backend enforces authentication for API, model, alert, profile, and live-str
 
 ## Run a live attack demonstration
 
+The recommended hackathon flow is the **Run simulation** control on the Dashboard. It opens a scenario dialog with mixed and focused attack streams, cold start, concept drift, 500/1000/2000 ms intervals, event count, live progress, and stop control. The Live Activity and Model Insights tabs update through authenticated SSE without refreshing.
+
 Keep backend and frontend running, then use a third terminal from the project root:
 
 ```bash
@@ -137,6 +139,7 @@ Other choices are `credential_misuse`, `lateral_movement`, and `device_spoofing`
 | POST | `/api/events/batch` | Score up to 500 events |
 | GET | `/api/events` | Filter recent events |
 | GET | `/api/events/stream` | Live SSE stream |
+| POST/GET/POST | `/api/simulations/start`, `/api/simulations/status`, `/api/simulations/stop` | Manage synthetic live scenarios |
 | GET | `/api/alerts` | Filter alert queue |
 | GET/PATCH | `/api/alerts/{id}` | Investigate or disposition an alert |
 | GET | `/api/users/{id}/profile` | Hierarchical baseline summary |
@@ -145,6 +148,9 @@ Other choices are `credential_misuse`, `lateral_movement`, and `device_spoofing`
 | GET | `/api/metrics/model` | Evaluation and artifact metadata |
 | GET | `/api/drift` | Detected behavior changes |
 | POST/GET | `/api/models/train`, `/api/models/status` | Candidate training and activation status |
+| GET | `/api/notifications` | Critical alert, drift, model, and simulation notifications |
+
+The latest verified evaluation is recorded in [MODEL_EVALUATION.md](MODEL_EVALUATION.md), including the complete confusion matrix and per-class precision, recall, and F1.
 
 Example authentication:
 
@@ -226,7 +232,7 @@ Capture these after running the demo; binary screenshots are intentionally not c
 
 ## Current evaluation
 
-With seed 42 on the generated chronological test split, the final verified run produced approximately 0.841 macro F1, 0.987 weighted F1, 0.46% false-positive rate, 12.31% false-negative rate, 0.952 anomaly ROC-AUC, and 0.674 anomaly PR-AUC. Exact model versions and complete class reports are stored in `data/models/metrics.json` after each run. Synthetic metrics demonstrate the workflow and must not be treated as production efficacy.
+With seed 42 on the regenerated chronological test split, model `v20260724-141525` produced 0.968 macro F1, 0.992 weighted F1, 0.12% classifier false-positive rate, 0.23% alert false-positive rate at the selected threshold, and 0.742 anomaly PR-AUC. Device spoofing reached 1.00 holdout F1; impossible travel remained the weakest class at 0.833 F1 and 0.75 recall. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for the per-class report, confusion matrix, threshold method, and limitations. Synthetic metrics demonstrate the workflow and must not be treated as production efficacy.
 
 ## Limitations and production path
 

@@ -83,13 +83,49 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray) -> dic
         pr_auc = float(average_precision_score(binary, anomaly_scores))
     except ValueError: roc_auc = pr_auc = 0.0
     latency_ms = (perf_counter() - started) * 1000 / max(len(y), 1)
+    risk = risk_scores(bundle, x)
+    binary = y != "normal"; alerted = risk >= bundle.alert_threshold
+    alert_tp = int(np.sum(binary & alerted)); alert_fp = int(np.sum(~binary & alerted))
+    alert_fn = int(np.sum(binary & ~alerted)); alert_tn = int(np.sum(~binary & ~alerted))
     return {
         "classes": labels, "confusion_matrix": matrix.tolist(), "classification_report": report,
         "macro_f1": float(f1_score(y, predicted, average="macro")), "weighted_f1": float(f1_score(y, predicted, average="weighted")),
         "false_positive_rate": fp / max(fp + tn, 1), "false_negative_rate": fn / max(fn + tp, 1),
         "anomaly_roc_auc": roc_auc, "anomaly_pr_auc": pr_auc, "sample_count": len(y),
         "average_detection_latency_ms": latency_ms, "threshold": bundle.alert_threshold,
+        "alert_precision": alert_tp / max(alert_tp + alert_fp, 1),
+        "alert_recall": alert_tp / max(alert_tp + alert_fn, 1),
+        "alert_false_positive_rate": alert_fp / max(alert_fp + alert_tn, 1),
     }
+
+
+def risk_scores(bundle: ModelBundle, x: np.ndarray) -> np.ndarray:
+    scaled = bundle.scaler.transform(x)
+    anomaly = bundle.anomaly_detector.score(scaled)
+    probabilities = bundle.attack_classifier.probabilities(scaled)
+    malicious_indices = [index for index, name in enumerate(bundle.attack_classifier.classes_) if name != "normal"]
+    malicious = probabilities[:, malicious_indices].max(axis=1) if malicious_indices else np.zeros(len(x))
+    deviation = np.clip(np.mean(np.minimum(np.abs(scaled), 5), axis=1) / 3, 0, 1)
+    criticality = np.clip(.75 * np.clip(x[:, 8], 0, 1), 0, 1)
+    return 100 * (.45 * anomaly + .35 * malicious + .10 * deviation + .10 * criticality)
+
+
+def tune_threshold(bundle: ModelBundle, x: np.ndarray, y: np.ndarray) -> dict:
+    scores = risk_scores(bundle, x); attacks = y != "normal"; curve = []
+    for threshold in range(30, 76, 5):
+        alerted = scores >= threshold
+        tp = int(np.sum(attacks & alerted)); fp = int(np.sum(~attacks & alerted))
+        fn = int(np.sum(attacks & ~alerted)); tn = int(np.sum(~attacks & ~alerted))
+        curve.append({"threshold": threshold, "precision": tp / max(tp + fp, 1),
+                      "recall": tp / max(tp + fn, 1), "false_positive_rate": fp / max(fp + tn, 1)})
+    eligible = [point for point in curve if point["false_positive_rate"] <= .01 and point["recall"] > 0]
+    selected = max(eligible, key=lambda point: (point["recall"], point["precision"], -point["threshold"])) \
+        if eligible else min(curve, key=lambda point: (point["false_positive_rate"], -point["recall"]))
+    bundle.alert_threshold = float(selected["threshold"])
+    return {"selected_threshold": bundle.alert_threshold, "validation_precision": selected["precision"],
+            "validation_recall": selected["recall"], "validation_false_positive_rate": selected["false_positive_rate"],
+            "selection_method": "maximize validation attack recall subject to <=1% alert false-positive rate",
+            "curve": curve}
 
 
 def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int = 42,
@@ -104,11 +140,11 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     classifier = AttackClassifier(seed).fit(scaled_train, y_train, compute_sample_weight("balanced", y_train))
     version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bundle = ModelBundle(version, FEATURE_SCHEMA_VERSION, FeaturePipeline.names, scaler, anomaly, classifier, 50.0, {})
-    validation_metrics = evaluation_metrics(bundle, *featured["validation"])
-    # Conservative risk threshold selection: high normal-score quantile mapped into the risk scale.
-    val_x, val_y = featured["validation"]; normal_scores = anomaly.score(scaler.transform(val_x[val_y == "normal"]))
-    if len(normal_scores): bundle.alert_threshold = float(np.clip(np.quantile(normal_scores, .98) * 45 + 20, 45, 70))
+    val_x, val_y = featured["validation"]
+    threshold_selection = tune_threshold(bundle, val_x, val_y)
+    validation_metrics = evaluation_metrics(bundle, val_x, val_y)
     bundle.metrics = {"validation": validation_metrics, "test": evaluation_metrics(bundle, *featured["test"]),
+                      "threshold_selection": threshold_selection,
                       "trained_at": datetime.now(timezone.utc).isoformat(), "feature_count": 12}
     bundle.save(model_dir / artifact_name)
     (model_dir / "metrics.json").write_text(json.dumps(bundle.metrics, indent=2))

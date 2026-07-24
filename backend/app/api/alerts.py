@@ -13,13 +13,23 @@ def alert_dict(alert: AlertRecord, detail: bool = False) -> dict:
     prediction, event = alert.prediction, alert.prediction.event
     result = {"id": alert.id, "timestamp": event.timestamp, "user_id": event.user_id, "device_id": event.device_id,
               "predicted_attack": prediction.predicted_attack, "risk_score": prediction.risk_score,
-              "severity": prediction.severity, "confidence": prediction.classifier_confidence, "status": alert.status,
+              "display_attack": (f"Possible {prediction.predicted_attack.replace('_', ' ').title()}"
+                                 if prediction.classifier_confidence < .6 and prediction.predicted_attack != "normal"
+                                 else prediction.predicted_attack.replace('_', ' ').title()),
+              "severity": prediction.severity, "anomaly_score": prediction.anomaly_score,
+              "classifier_confidence": prediction.classifier_confidence, "confidence": prediction.classifier_confidence,
+              "status": alert.status, "location": f"{event.raw_event.get('city')}, {event.raw_event.get('country')}",
+              "baseline_type": prediction.baseline_type, "model_version": prediction.model_version,
               "explanation": prediction.explanation.get("text", "")}
     if detail:
         result.update(event=event.raw_event, features=prediction.features, anomaly_score=prediction.anomaly_score,
                       class_probabilities=prediction.class_probabilities, baseline_type=prediction.baseline_type,
                       baseline_confidence=prediction.baseline_confidence, model_version=prediction.model_version,
                       feature_schema_version=prediction.feature_schema_version, explanation_detail=prediction.explanation,
+                      feature_evidence=prediction.explanation.get("feature_evidence", []),
+                      risk_composition=prediction.explanation.get("risk_composition", {}),
+                      cold_start=prediction.explanation.get("cold_start", prediction.baseline_type != "user"),
+                      recommended_actions=prediction.explanation.get("recommended_actions", []),
                       feedback=[{"status": f.status, "analyst": f.analyst, "comment": f.comment, "created_at": f.created_at} for f in alert.feedback])
     return result
 
@@ -46,8 +56,15 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)):
     alert = query_alert(alert_id, db)
     if not alert: raise HTTPException(404, "alert not found")
     event = alert.prediction.event
-    timeline_query = select(EventRecord).where(EventRecord.user_id == event.user_id).order_by(desc(EventRecord.timestamp)).limit(20)
-    result = alert_dict(alert, True); result["timeline"] = [row.raw_event for row in db.scalars(timeline_query)]; return result
+    timeline_query = select(EventRecord).options(joinedload(EventRecord.prediction)).where(
+        EventRecord.user_id == event.user_id).order_by(desc(EventRecord.timestamp)).limit(20)
+    result = alert_dict(alert, True)
+    result["timeline"] = [{"event": row.raw_event,
+        "prediction": ({"anomaly_score": row.prediction.anomaly_score, "classifier_confidence": row.prediction.classifier_confidence,
+                        "predicted_attack": row.prediction.predicted_attack, "risk_score": row.prediction.risk_score,
+                        "severity": row.prediction.severity} if row.prediction else None)}
+        for row in db.scalars(timeline_query).unique()]
+    return result
 
 
 @router.patch("/alerts/{alert_id}")
@@ -60,4 +77,3 @@ def update_alert(alert_id: int, update: AlertUpdate, db: Session = Depends(get_d
     if update.status == "false_positive": alert.prediction.event.trusted = True
     db.commit(); db.refresh(feedback)
     return {"id": alert.id, "status": alert.status, "feedback_id": feedback.id}
-

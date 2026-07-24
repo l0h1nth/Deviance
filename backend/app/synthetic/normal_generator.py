@@ -61,9 +61,39 @@ def generate_normal(users: list[SyntheticUser], events_per_user: int, rng: np.ra
     events: list[AccessEvent] = []
     index = 0
     for day in range(events_per_user):
-        for user in users:
+        for user_index, user in enumerate(users):
             hour = (user.shift_hour + rng.normal(0, 1.3)) % 24
             stamp = start + timedelta(days=day, hours=float(hour), minutes=int(rng.integers(0, 60)))
-            events.append(normal_event(user, stamp, index, rng)); index += 1
+            event = normal_event(user, stamp, index, rng)
+            updates = {}
+            # Realistic benign device changes prevent novelty from becoming a fixed attack rule.
+            if day % 37 == 8 and user_index % 5 == 0:
+                updates.update(event_type="login", authentication_result="success", browser=f"{event.browser} 126",
+                               user_agent=f"{event.browser}/126 ({event.operating_system})")
+            elif day % 37 == 13 and user_index % 7 == 0:
+                updates.update(event_type="login", authentication_result="success",
+                               operating_system=f"{event.operating_system} update", user_agent=f"{event.browser}/125 (updated OS)")
+            elif day % 37 in {18, 19} and user_index % 9 == 0:
+                replacement=f"replacement-{user_index}"
+                updates.update(event_type="login", authentication_result="success", device_id=replacement,
+                               claimed_device_id=replacement, device_fingerprint=fingerprint(replacement))
+            elif day % 37 == 24 and user_index % 11 == 0:
+                shared=f"shared-terminal-{user.department.lower()}"
+                updates.update(event_type="login", authentication_result="success", device_id=shared,
+                               claimed_device_id=shared, device_fingerprint=fingerprint(shared))
+            elif day % 37 == 29 and user_index % 13 == 0:
+                updates.update(event_type="login", authentication_result="success",
+                               device_fingerprint=fingerprint(f"reset-{event.device_id}-{day}"))
+            # Legitimate location transitions include proxy/VPN changes, nearby travel and day-separated flights.
+            if day % 31 == 6 and user_index % 4 == 0:
+                updates.update(source_ip=f"198.18.{user_index % 250}.{day + 1}", is_vpn=True)
+            elif day % 31 == 11 and user_index % 6 == 0:
+                updates.update(city=f"{user.office.city} Metro", latitude=user.office.latitude + .35,
+                               longitude=user.office.longitude + .35)
+            elif day % 31 == 17 and user_index % 10 == 0:
+                destination=OFFICES[(OFFICES.index(user.office) + 1) % len(OFFICES)]
+                updates.update(event_type="login", authentication_result="success", country=destination.country,
+                               city=destination.city, latitude=destination.latitude, longitude=destination.longitude,
+                               is_vpn=False, session_id=f"legitimate-flight-{user_index}-{day}")
+            events.append(event.model_copy(update=updates)); index += 1
     return sorted(events, key=lambda e: e.timestamp)
-

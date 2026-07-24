@@ -66,6 +66,12 @@ Both models evaluate every event. The configurable initial risk composition is 4
 
 Random-Forest feature importance and event-specific scaled deviations rank contributions. Isolation-Forest explanations use deviations from the selected hierarchy baseline. Responses name actual feature values and expected baseline context, list attack probabilities, confidence and versions, state cold start, and provide class-specific analyst actions.
 
+## Real-time simulation and live delivery
+
+`POST /api/simulations/start` creates a bounded in-process simulation task; status and cancellation are exposed through `GET /api/simulations/status` and `POST /api/simulations/stop`. Scenario selection changes only generated telemetry. Every event is reconstructed through the strict `AccessEvent` schema and passed to the same `PredictionService` used by HTTP ingestion: persistence, historical lookup, the 12-feature contract, Isolation Forest, classifier, risk composition, feature explanation, thresholded alert creation, trusted-profile handling, drift observation, and SSE publication all remain in one path.
+
+The process-local event bus broadcasts scored events and simulation state to authenticated SSE clients. The React workspace keeps a bounded 250-event display buffer, derives events-per-second locally, and always reloads metrics and alerts from authoritative API endpoints. A production deployment would replace the in-process task and fan-out with partitioned stream workers and a shared broker.
+
 ## Concept drift and feedback
 
 A lightweight two-window detector watches login-hour, location, device, download, duration, and anomaly-score distributions. Significant changes become stored drift events and clear the local detection window. They are not learned automatically. Trusted recent events form the only suitable retraining input. The simulator's `concept_drift` scenario demonstrates a legitimate day-to-evening shift.
@@ -108,7 +114,16 @@ Route modules delegate ingestion/scoring to services. Available APIs cover admin
 
 ## Scalability path
 
-The local synchronous path prioritizes hackathon clarity. In production, put Kafka or Redis Streams before ingestion, short rolling windows in Redis, PostgreSQL behind the same repository interfaces, model artifacts in object storage plus a signed registry, and inference in separately scaled model-serving workers. Partition consumers by identity to preserve ordering. Horizontal stateless API workers publish to a shared fan-out layer instead of in-process SSE queues. Add OpenTelemetry traces, structured audit logs, Prometheus model/latency/drift metrics, dead-letter queues, replay-safe idempotency, and blue/green model rollout.
+The local synchronous path prioritizes hackathon clarity. In production:
+
+- Put Kafka or Redis Streams before ingestion, partitioned by identity to retain per-user ordering and support replay.
+- Store short rolling feature windows and stream coordination in Redis.
+- Move durable events, predictions, feedback, notifications, profiles, and drift records to PostgreSQL behind the existing repository boundaries.
+- Run separately scalable model-serving workers so API concurrency and inference capacity can scale independently.
+- Store signed artifacts in object storage and register versions, schemas, metrics, approvals, and rollback state in a model registry.
+- Run horizontal stateless FastAPI workers behind a load balancer.
+- Replace process-local SSE fan-out with Redis/Kafka-backed WebSocket or SSE gateways.
+- Add OpenTelemetry traces, structured audit logs, Prometheus latency/throughput/drift/model metrics, alerting, dead-letter queues, replay-safe idempotency, and blue/green model rollout.
 
 ## Security considerations
 

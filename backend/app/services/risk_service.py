@@ -12,13 +12,20 @@ class RiskService:
         deviation = float(np.clip(np.mean(np.minimum(np.abs(scaled_vector), 5)) / 3, 0, 1))
         criticality = float(np.clip(.75 * event.resource_sensitivity + .25 * event.is_privileged_action, 0, 1))
         a, c, d, r = self.weights
-        raw = 100 * (a * inference["anomaly_score"] + c * malicious + d * deviation + r * criticality)
+        components = {
+            "anomaly": 100 * a * inference["anomaly_score"],
+            "classifier": 100 * c * malicious,
+            "behavioral_deviation": 100 * d * deviation,
+            "resource_criticality": 100 * r * criticality,
+        }
+        raw = sum(components.values())
         # Cold start affects confidence, not the evidence/risk itself.
         risk = float(np.clip(raw, 0, 100))
         severity = "low" if risk < 30 else "medium" if risk < 50 else "high" if risk < 70 else "critical"
         model_confidence = float(np.clip((inference["classifier_confidence"] + baseline_confidence) / 2, 0, 1))
         return {"risk_score": round(risk, 2), "severity": severity, "model_confidence": model_confidence,
-                "baseline_deviation": deviation, "criticality": criticality}
+                "baseline_deviation": deviation, "criticality": criticality,
+                "risk_composition": {key: round(value, 2) for key, value in components.items()}}
 
     @staticmethod
     def actions(predicted: str, severity: str) -> list[str]:
@@ -33,4 +40,3 @@ class RiskService:
         }
         if severity == "critical": base.insert(0, "Escalate immediately to incident response")
         return [specific.get(predicted, specific["normal"]), *base]
-

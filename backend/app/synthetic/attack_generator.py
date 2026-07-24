@@ -52,23 +52,40 @@ def lateral_movement(user: SyntheticUser, base: AccessEvent, scenario: int) -> l
 
 def impossible_travel(user: SyntheticUser, base: AccessEvent, scenario: int) -> list[AccessEvent]:
     office = OFFICES[(OFFICES.index(user.office) + 4) % len(OFFICES)]
+    second_office = OFFICES[(OFFICES.index(user.office) + 2) % len(OFFICES)]
     return [
         _copy(base, suffix=f"{scenario}-0", label="impossible_travel", seconds=0, event_type="login", authentication_result="success"),
         _copy(base, suffix=f"{scenario}-1", label="impossible_travel", seconds=180, event_type="login", authentication_result="success",
               country=office.country, city=office.city, latitude=office.latitude, longitude=office.longitude,
-              source_ip=f"192.0.2.{scenario % 240 + 1}", is_vpn=False, session_id=f"overlap-{scenario}"),
+              source_ip=f"192.0.2.{scenario % 240 + 1}", is_vpn=False, session_id=base.session_id),
+        _copy(base, suffix=f"{scenario}-2", label="impossible_travel", seconds=240, event_type="resource_access",
+              authentication_result="not_applicable", country=office.country, city=office.city,
+              latitude=office.latitude, longitude=office.longitude, session_id=base.session_id,
+              resource_id="prod-console", resource_type="infrastructure", resource_sensitivity=.95),
+        _copy(base, suffix=f"{scenario}-3", label="impossible_travel", seconds=300, event_type="login", authentication_result="success",
+              device_id=f"travel-device-{scenario}", claimed_device_id=f"travel-device-{scenario}",
+              device_fingerprint=fingerprint(f"travel-{scenario}"), country=second_office.country, city=second_office.city,
+              latitude=second_office.latitude, longitude=second_office.longitude, is_vpn=False,
+              source_ip=f"203.0.113.{scenario % 240 + 1}", session_id=f"parallel-{scenario}"),
     ]
 
 
 def device_spoofing(user: SyntheticUser, base: AccessEvent, scenario: int) -> list[AccessEvent]:
+    claimed = user.devices[0]["id"]
+    spoof_fingerprint = fingerprint(f"spoof-{scenario}")
     return [
         _copy(base, suffix=f"{scenario}-0", label="device_spoofing", seconds=0, event_type="login", authentication_result="success",
-              device_id=f"spoof-{scenario}", claimed_device_id=user.devices[0]["id"], operating_system="Android 15", browser="Mobile Safari",
-              user_agent="Mobile Safari/18 (Android)", device_fingerprint=fingerprint(f"spoof-{scenario}")),
+              device_id=claimed, claimed_device_id=claimed, operating_system="Android 15", browser="Mobile Safari",
+              user_agent="Mobile Safari/18 (Android)", device_fingerprint=spoof_fingerprint),
         _copy(base, suffix=f"{scenario}-1", label="device_spoofing", seconds=50, event_type="resource_access",
-              device_id=f"spoof-{scenario}", claimed_device_id=user.devices[0]["id"], operating_system="Android 15", browser="Mobile Safari",
-              device_fingerprint=fingerprint(f"spoof-{scenario}"), resource_id="prod-console", resource_type="infrastructure",
+              device_id=claimed, claimed_device_id=claimed, operating_system="Android 15", browser="Mobile Safari",
+              device_fingerprint=spoof_fingerprint, resource_id="prod-console", resource_type="infrastructure",
               resource_sensitivity=.95, destination_host="prod-console.internal", is_privileged_action=True),
+        _copy(base, suffix=f"{scenario}-2", label="device_spoofing", seconds=85, event_type="file_download",
+              authentication_result="not_applicable", device_id=claimed, claimed_device_id=claimed,
+              operating_system="Android 15", browser="Mobile Safari", device_fingerprint=spoof_fingerprint,
+              resource_id="payroll", resource_type="database", resource_sensitivity=.9,
+              destination_host="payroll.internal", bytes_downloaded=18_000_000),
     ]
 
 

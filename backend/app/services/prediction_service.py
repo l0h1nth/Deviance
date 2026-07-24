@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.database.models import AlertRecord, DeviceRecord, EventRecord, FeatureVectorRecord, PredictionRecord, UserRecord
 from app.ml.explainability import explain_features, human_explanation
 from app.ml.feature_pipeline import FeaturePipeline
+from app.ml.feature_registry import registry
 from app.ml.model_bundle import ModelBundle
 from app.schemas.events import AccessEvent
 from app.services.drift_service import DriftService
@@ -37,7 +38,7 @@ class PredictionService:
             except ValueError: continue
         return history
 
-    def process(self, event: AccessEvent) -> dict:
+    def process(self, event: AccessEvent, trusted_override: bool = False) -> dict:
         started = perf_counter()
         if self.db.scalar(select(EventRecord).where(EventRecord.event_id == event.event_id)):
             raise ValueError(f"event_id {event.event_id} already exists")
@@ -57,6 +58,13 @@ class PredictionService:
         inference = self.bundle.infer(vector)
         risk_data = RiskService().score(inference, inference["scaled_vector"], event, baseline.confidence)
         contributions = explain_features(metadata["values"], inference["scaled_vector"], self.bundle.attack_classifier.feature_importances_)
+        feature_evidence = [{
+            "feature": definition.name,
+            "value": float(metadata["values"][definition.name]),
+            "baseline": 1.0 if definition.name == "unique_destination_hosts_5m" else 0.0,
+            "deviation": float(abs(inference["scaled_vector"][index])),
+            "description": definition.description,
+        } for index, definition in enumerate(registry.definitions)]
         cold_start = baseline.baseline_type != "user"
         explanation = human_explanation(contributions, baseline.baseline_type, cold_start)
         predicted = inference["predicted_attack"]
@@ -69,7 +77,8 @@ class PredictionService:
                     feature_schema_version=self.bundle.feature_schema_version,
                     baseline_metadata={key: metadata[key] for key in ("baseline_type", "historical_events", "baseline_confidence",
                                                                       "profile_version", "last_updated")}))
-        explanation_json = {"top_contributing_features": contributions, "text": explanation,
+        explanation_json = {"top_contributing_features": contributions, "feature_evidence": feature_evidence,
+                            "risk_composition": risk_data["risk_composition"], "text": explanation,
                             "recommended_actions": RiskService.actions(predicted, risk_data["severity"]), "cold_start": cold_start}
         prediction = PredictionRecord(event_db_id=event_record.id, features=metadata["values"],
             anomaly_score=inference["anomaly_score"], predicted_attack=predicted,
@@ -81,13 +90,17 @@ class PredictionService:
         alert = None
         if risk_data["risk_score"] >= self.bundle.alert_threshold:
             alert = AlertRecord(prediction_id=prediction.id, status="open"); self.db.add(alert); self.db.flush()
-        if risk_data["risk_score"] <= self.settings.profile_update_max_risk and predicted == "normal":
+        automatically_trusted = risk_data["risk_score"] <= self.settings.profile_update_max_risk and predicted == "normal"
+        if trusted_override or automatically_trusted:
             event_record.trusted = True; device.trusted_event_count += 1; self.profiles.update_trusted(event)
         drift_values = {**metadata["values"], "anomaly_score": inference["anomaly_score"]}
-        drift = DriftService(self.db).observe(event.user_id, drift_values)
+        drift = DriftService(self.db).observe(event.user_id, drift_values) if event_record.trusted else []
         self.db.commit()
         return {
             "event_id": event.event_id, "anomaly_score": inference["anomaly_score"], "predicted_attack": predicted,
+            "display_attack": (f"Possible {predicted.replace('_', ' ').title()}"
+                               if inference["classifier_confidence"] < .6 and predicted != "normal"
+                               else predicted.replace('_', ' ').title()),
             "class_probabilities": inference["class_probabilities"], "classifier_confidence": inference["classifier_confidence"],
             "model_confidence": risk_data["model_confidence"], "baseline_confidence": baseline.confidence,
             "risk_score": risk_data["risk_score"], "severity": risk_data["severity"],
@@ -96,5 +109,11 @@ class PredictionService:
             "historical_events": baseline.event_count, "cold_start": cold_start, "model_version": self.bundle.version,
             "feature_schema_version": self.bundle.feature_schema_version, "alert_id": alert.id if alert else None,
             "latency_ms": latency_ms, "drift_detected": bool(drift), "user_id": event.user_id, "device_id": event.device_id,
-            "timestamp": event.timestamp.isoformat(),
+            "timestamp": event.timestamp.isoformat(), "event_type": event.event_type,
+            "location": {"country": event.country, "city": event.city, "latitude": event.latitude, "longitude": event.longitude},
+            "authentication_result": event.authentication_result, "features": metadata["values"],
+            "feature_evidence": feature_evidence, "risk_composition": risk_data["risk_composition"],
+            "event": event.model_dump(mode="json", exclude={"ground_truth_label"}),
+            "trusted": event_record.trusted,
+            "trust_source": "pre_reviewed_synthetic_drift" if trusted_override else "automatic_low_risk" if automatically_trusted else None,
         }
