@@ -1,26 +1,42 @@
-import {Activity, AlertOctagon, Clock3, Radio, ShieldAlert, TimerReset} from 'lucide-react';
+import {Check,ChevronDown,Play} from 'lucide-react';
 import {Area,AreaChart,CartesianGrid,ResponsiveContainer,Tooltip,XAxis,YAxis} from 'recharts';
-import {StatCard} from '../components/StatCard';import {RiskPill} from '../components/RiskPill';import type {Alert,Metrics} from '../types';
+import {RiskPill} from '../components/RiskPill';import type {Alert,Metrics} from '../types';
 
-export function Overview({metrics,alerts,onSelect}:{metrics:Metrics|null;alerts:Alert[];onSelect:(a:Alert)=>void}){
-  if(!metrics)return <div className="loading">Connecting to detection telemetry…</div>;
-  const critical=alerts.filter(a=>a.severity==='critical').length;
+const palette=['#d8387e','#f6bd19','#42bfd3','#7656c9','#58b982','#ef7c45'];
+
+export function Overview({metrics,alerts,model,onSelect}:{metrics:Metrics|null;alerts:Alert[];model:any;onSelect:(a:Alert)=>void}){
+  if(!metrics)return <div className="loading">Loading behavioral telemetry…</div>;
+  const open=alerts.filter(a=>a.status==='open').length, investigating=alerts.filter(a=>a.status==='investigating').length, critical=alerts.filter(a=>a.severity==='critical').length;
+  const fp=Math.round(metrics.false_positive_rate*100),maxAttack=Math.max(...Object.values(metrics.attacks_by_type),1);
+  const riskMix=`conic-gradient(#d8387e 0 ${Math.max(critical/Math.max(metrics.total_alerts,1)*100,8)}%, #f6bd19 0 42%, #42bfd3 0 70%, #7656c9 0 100%)`;
   return <>
-    <header className="page-head"><div><span className="eyebrow">SECURITY OPERATIONS</span><h1>Detection command center</h1><p>Behavioral detections, incident pressure, and model telemetry across the organization.</p></div><div className="page-controls"><button>Last 24 hours</button><button className="live"><i/> Live</button></div></header>
-    <section className="threat-banner"><div><Radio/><span>DETECTION POSTURE</span><strong>{critical?'Elevated':'Nominal'}</strong></div><p>{critical?`${critical} critical detections require immediate triage.`:'No critical behavioral detections in the active queue.'}</p><span className="engine-latency">PIPELINE {metrics.average_detection_latency_ms} MS</span></section>
-    <section className="stats">
-      <StatCard label="Telemetry processed" value={metrics.total_events.toLocaleString()} detail="events in current store" icon={<Activity/>}/>
-      <StatCard label="Detection queue" value={metrics.total_alerts} detail={`${metrics.open_investigations} open / investigating`} icon={<ShieldAlert/>} tone="warning"/>
-      <StatCard label="Critical priority" value={metrics.critical_alerts} detail="highest response SLA" icon={<AlertOctagon/>} tone="danger"/>
-      <StatCard label="Mean detection time" value={`${metrics.average_detection_latency_ms} ms`} detail="ingest to verdict" icon={<Clock3/>} tone="good"/>
+    <div className="overview-tabs"><button className="active">General</button><button>Live activity</button><button>Model insights</button><button className="run-demo"><Play/> Run simulation</button></div>
+
+    <section className="summary-card">
+      <div className="section-heading"><h2>General information</h2><span>Updated just now</span></div>
+      <div className="summary-fields">
+        <Info label="Detection model" value="Isolation Forest + RF"/>
+        <Info label="Monitoring window" value="Real-time / rolling 5 min"/>
+        <Info label="Feature schema" value={model?.feature_schema_version||'1.0.0'}/>
+        <Info label="Alert threshold" value={model?.alert_threshold?`${model.alert_threshold.toFixed(1)} risk`:'50 risk'}/>
+        <Info label="Mean latency" value={`${metrics.average_detection_latency_ms} ms`} accent/>
+        <Info label="Model version" value={model?.model_version||'Not trained'}/>
+      </div>
     </section>
-    <section className="operations-grid">
-      <article className="panel trend-panel"><div className="panel-title"><div><span>RISK TELEMETRY</span><h2>Model risk over event sequence</h2></div><div className="legend"><i/> Risk score</div></div><ResponsiveContainer width="100%" height={245}><AreaChart data={metrics.risk_trend}><defs><linearGradient id="riskFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--risk)" stopOpacity={.28}/><stop offset="100%" stopColor="var(--risk)" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="var(--grid)" vertical={false}/><XAxis dataKey="id" tick={{fill:'var(--muted)',fontSize:9}} axisLine={false} tickLine={false}/><YAxis domain={[0,100]} tick={{fill:'var(--muted)',fontSize:9}} axisLine={false} tickLine={false}/><Tooltip contentStyle={{background:'var(--surface-raised)',border:'1px solid var(--line)',borderRadius:0,color:'var(--text)'}}/><Area type="stepAfter" dataKey="risk" stroke="var(--risk)" fill="url(#riskFill)" strokeWidth={2}/></AreaChart></ResponsiveContainer></article>
-      <article className="panel distribution-panel"><div className="panel-title"><div><span>DETECTION DISTRIBUTION</span><h2>Model verdicts</h2></div><TimerReset/></div><div className="bars">{Object.entries(metrics.attacks_by_type).sort((a,b)=>b[1]-a[1]).map(([name,count])=><div key={name}><label><span>{name.replaceAll('_',' ')}</span><b>{count}</b></label><div><i style={{width:`${Math.max(2,Math.min(100,count/Math.max(...Object.values(metrics.attacks_by_type),1)*100))}%`}}/></div></div>)}</div></article>
+
+    <section className="overview-cards">
+      <article className="clean-card status-card"><div className="section-heading"><h2>Detections by status</h2><button>Last 24 hours <ChevronDown/></button></div><div className="status-content"><div className="donut" style={{background:riskMix}}><div><span>Total</span><strong>{metrics.total_alerts}</strong></div></div><div className="status-metrics"><CircleMetric value={open} label="Pending" color="#d8387e" total={metrics.total_alerts}/><CircleMetric value={investigating} label="In progress" color="#f6bd19" total={metrics.total_alerts}/><CircleMetric value={Math.max(0,metrics.total_alerts-open-investigating)} label="Reviewed" color="#42bfd3" total={metrics.total_alerts}/><CircleMetric value={critical} label="Critical" color="#7656c9" total={metrics.total_alerts}/></div></div></article>
+
+      <article className="clean-card owner-card"><div className="section-heading"><h2>Detections by attack class</h2><span>Model verdicts</span></div><div className="attack-bars">{Object.entries(metrics.attacks_by_type).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([name,count],index)=><div key={name}><span className="class-avatar" style={{background:palette[index]}}>{name.slice(0,2).toUpperCase()}</span><div><label>{name.replaceAll('_',' ')}</label><span><i style={{width:`${Math.max(6,count/maxAttack*100)}%`,background:palette[index]}}/></span></div><strong>{count}</strong></div>)}</div></article>
     </section>
-    <section className="panel alerts queue-panel"><div className="panel-title"><div><span>ACTIVE TRIAGE</span><h2>Detection queue</h2></div><div className="queue-meta"><i/>{alerts.filter(a=>a.status==='open').length} unassigned</div></div><AlertTable alerts={alerts.slice(0,9)} onSelect={onSelect}/></section>
+
+    <section className="clean-card timeline-card"><div className="section-heading"><h2>Risk timeline</h2><div className="timeline-legend"><span><i className="normal"/>Normal range</span><span><i className="elevated"/>Elevated risk</span></div></div><ResponsiveContainer width="100%" height={190}><AreaChart data={metrics.risk_trend}><defs><linearGradient id="cleanRisk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7656c9" stopOpacity={.2}/><stop offset="100%" stopColor="#7656c9" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="var(--grid)" strokeDasharray="4 4" vertical={false}/><XAxis dataKey="id" tick={{fill:'var(--muted)',fontSize:9}} axisLine={false} tickLine={false}/><YAxis domain={[0,100]} tick={{fill:'var(--muted)',fontSize:9}} axisLine={false} tickLine={false}/><Tooltip contentStyle={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:10,color:'var(--text)'}}/><Area type="monotone" dataKey="risk" stroke="#7656c9" fill="url(#cleanRisk)" strokeWidth={2}/></AreaChart></ResponsiveContainer></section>
+
+    <section className="clean-card recent-card"><div className="section-heading"><h2>Recent detections</h2><button>View all <span>→</span></button></div><AlertTable alerts={alerts.slice(0,6)} onSelect={onSelect}/></section>
   </>;
 }
 
-export function AlertTable({alerts,onSelect}:{alerts:Alert[];onSelect:(a:Alert)=>void}){return <div className="table-wrap"><table><thead><tr><th>Created</th><th>Entity</th><th>Detection</th><th>Risk / Severity</th><th>Confidence</th><th>Workflow</th><th></th></tr></thead><tbody>{alerts.map(a=><tr key={a.id} onClick={()=>onSelect(a)}><td><time>{new Date(a.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time><small>{new Date(a.timestamp).toLocaleDateString()}</small></td><td><b>{a.user_id}</b><small>{a.device_id}</small></td><td><span className="detection-name">{a.predicted_attack.replaceAll('_',' ')}</span></td><td><RiskPill score={a.risk_score} severity={a.severity}/></td><td><span className="confidence"><i style={{width:`${Math.round(a.confidence*100)}%`}}/></span><small>{Math.round(a.confidence*100)}%</small></td><td><span className={`status ${a.status}`}>{a.status.replaceAll('_',' ')}</span></td><td className="row-arrow">→</td></tr>)}</tbody></table>{!alerts.length&&<div className="empty">No detections in queue. Start the stream simulator to send telemetry.</div>}</div>}
+function Info({label,value,accent=false}:{label:string;value:string;accent?:boolean}){return <div className="info-field"><span>{label}</span><strong>{value}</strong>{accent&&<div className="latency-track"><i/></div>}</div>}
+function CircleMetric({value,label,color,total}:{value:number;label:string;color:string;total:number}){const percent=Math.max(8,value/Math.max(total,1)*100);return <div className="circle-metric"><div style={{background:`conic-gradient(${color} ${percent}%, var(--soft-fill) 0)`}}><span>{value}</span></div><label>{label}</label></div>}
 
+export function AlertTable({alerts,onSelect}:{alerts:Alert[];onSelect:(a:Alert)=>void}){return <div className="table-wrap"><table><thead><tr><th>Time</th><th>Identity</th><th>Detection</th><th>Risk</th><th>Confidence</th><th>Status</th></tr></thead><tbody>{alerts.map(a=><tr key={a.id} onClick={()=>onSelect(a)}><td><time>{new Date(a.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time></td><td><b>{a.user_id}</b><small>{a.device_id}</small></td><td className="detection-name">{a.predicted_attack.replaceAll('_',' ')}</td><td><RiskPill score={a.risk_score} severity={a.severity}/></td><td>{Math.round(a.confidence*100)}%</td><td><span className={`status ${a.status}`}>{a.status==='closed'?<Check/>:null}{a.status.replaceAll('_',' ')}</span></td></tr>)}</tbody></table>{!alerts.length&&<div className="empty">No detections yet. Start the simulator to populate this dashboard.</div>}</div>}
