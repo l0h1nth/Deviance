@@ -11,24 +11,34 @@ def payload(**changes):
     return data
 
 
+def auth_headers(client: TestClient) -> dict[str, str]:
+    response=client.post("/api/auth/login",json={"username":"admin","password":"admin"})
+    assert response.status_code==200
+    return {"Authorization":f"Bearer {response.json()['access_token']}"}
+
+
 def test_health_and_malformed_event():
     with TestClient(app) as client:
         assert client.get("/api/health").status_code==200
+        assert client.get("/api/alerts").status_code==401
+        assert client.post("/api/auth/login",json={"username":"admin","password":"wrong"}).status_code==401
+        headers=auth_headers(client)
+        assert client.get("/api/auth/me",headers=headers).json()["role"]=="administrator"
         bad=payload();bad["latitude"]=999
-        assert client.post("/api/events/ingest",json=bad).status_code==422
+        assert client.post("/api/events/ingest",json=bad,headers=headers).status_code==422
 
 
 def test_ingestion_alert_and_analyst_feedback():
     with TestClient(app) as client:
+        headers=auth_headers(client)
         result=None
         for i in range(7):
             item=payload(authentication_result="failure" if i<6 else "success",device_id="unknown-attack-device",
                          device_fingerprint="malicious-fingerprint-999",source_ip="198.51.100.200")
-            response=client.post("/api/events/ingest",json=item);assert response.status_code==200,response.text;result=response.json()
+            response=client.post("/api/events/ingest",json=item,headers=headers);assert response.status_code==200,response.text;result=response.json()
         assert 0<=result["risk_score"]<=100 and result["predicted_attack"]
-        alerts=client.get("/api/alerts").json();assert alerts
+        alerts=client.get("/api/alerts",headers=headers).json();assert alerts
         alert_id=alerts[0]["id"]
-        update=client.patch(f"/api/alerts/{alert_id}",json={"status":"false_positive","analyst":"pytest","comment":"validated"})
+        update=client.patch(f"/api/alerts/{alert_id}",headers=headers,json={"status":"false_positive","analyst":"pytest","comment":"validated"})
         assert update.status_code==200 and update.json()["status"]=="false_positive"
-        detail=client.get(f"/api/alerts/{alert_id}").json();assert detail["feedback"]
-
+        detail=client.get(f"/api/alerts/{alert_id}",headers=headers).json();assert detail["feedback"]

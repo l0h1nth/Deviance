@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     profile_update_max_risk: float = 29.0
     max_batch_size: int = 500
     random_seed: int = 42
+    admin_username: str = "admin"
+    admin_password: str = "admin"
+    auth_secret: str = "deviance-hackathon-change-me"
+    auth_token_hours: int = 8
     model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
 
     @property
@@ -30,4 +34,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

@@ -104,7 +104,7 @@ erDiagram
 
 ## API and dashboard design
 
-Route modules delegate ingestion/scoring to services. Available APIs cover health, one/batch ingestion, event filtering, alert filtering/detail/feedback, user profile/timeline, overview/model metrics, drift, training/status, and SSE. CORS is explicit. The React/Vite dashboard provides overview KPIs and trend, live/filterable alerts, investigation evidence and disposition, behavior guidance, model evaluation, and drift review. It reconnects through the browser's native `EventSource`.
+Route modules delegate ingestion/scoring to services. Available APIs cover administrator login/identity, health, one/batch ingestion, event filtering, alert filtering/detail/feedback, user profile/timeline, overview/model metrics, drift, training/status, and SSE. CORS is explicit. Signed, expiring HMAC tokens protect API and SSE access. The React/Vite dashboard provides a disclosed hackathon login, behavior posture and model pulse, live/filterable alerts, investigation evidence and disposition, behavior guidance, model evaluation, and drift review.
 
 ## Scalability path
 
@@ -112,9 +112,8 @@ The local synchronous path prioritizes hackathon clarity. In production, put Kaf
 
 ## Security considerations
 
-Telemetry may contain personal and location data: production requires minimization, encryption, retention controls, RBAC, tenant isolation, audit logs, and jurisdiction review. Add authentication/authorization before exposing analyst or training endpoints. Artifacts should be signed and loaded from an allowlisted registry. Rate limiting, reverse-proxy body limits, TLS, secret management, and database least privilege are deployment responsibilities. API errors intentionally omit stack traces.
+Telemetry may contain personal and location data: production requires minimization, encryption, retention controls, RBAC, tenant isolation, audit logs, and jurisdiction review. The included `admin/admin` login and HMAC token are intentionally hackathon-oriented; production must replace them with OIDC/SSO, MFA, granular authorization, credential rotation, and server-side revocation. Artifacts should be signed and loaded from an allowlisted registry. Rate limiting, reverse-proxy body limits, TLS, secret management, and database least privilege are deployment responsibilities. API errors intentionally omit stack traces.
 
 ## Limitations and future work
 
-Synthetic behavior cannot reproduce all enterprise correlations, and class accuracy—especially rare device spoofing and impossible travel—depends on scenario diversity. The local rolling drift detector is intentionally simpler than River ADWIN. The dashboard has no map tile provider or authentication. SQLite and in-memory SSE are single-node. Future work includes calibrated classifier probabilities, SHAP TreeExplainer caching, richer device/graph features, ADWIN, attack-sequence aggregation, PostgreSQL/Redis/Kafka adapters, privacy-preserving retention, human approval for candidate activation, and evaluation on sanitized real telemetry.
-
+Synthetic behavior cannot reproduce all enterprise correlations, and class accuracy—especially rare device spoofing and impossible travel—depends on scenario diversity. The local rolling drift detector is intentionally simpler than River ADWIN. The dashboard has no map tile provider, and its single demo administrator is not a substitute for enterprise identity. SQLite and in-memory SSE are single-node. Future work includes calibrated classifier probabilities, SHAP TreeExplainer caching, richer device/graph features, ADWIN, attack-sequence aggregation, OIDC/MFA/RBAC, PostgreSQL/Redis/Kafka adapters, privacy-preserving retention, human approval for candidate activation, and evaluation on sanitized real telemetry.

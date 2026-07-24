@@ -97,6 +97,15 @@ npm run dev
 
 Open `http://localhost:5173`. Vite proxies `/api` to the backend. For a separate deployment, set `VITE_API_URL` to the public API prefix before building.
 
+The hackathon login is displayed directly on the sign-in screen:
+
+```text
+Username: admin
+Password: admin
+```
+
+The backend enforces authentication for API, model, alert, profile, and live-stream routes. Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` in `.env` before sharing a deployment.
+
 ## Run a live attack demonstration
 
 Keep backend and frontend running, then use a third terminal from the project root:
@@ -122,6 +131,8 @@ Other choices are `credential_misuse`, `lateral_movement`, and `device_spoofing`
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Service/model readiness |
+| POST | `/api/auth/login` | Exchange administrator credentials for an eight-hour signed token |
+| GET | `/api/auth/me` | Return the authenticated administrator identity |
 | POST | `/api/events/ingest` | Validate, feature-engineer, score, persist, publish |
 | POST | `/api/events/batch` | Score up to 500 events |
 | GET | `/api/events` | Filter recent events |
@@ -135,11 +146,20 @@ Other choices are `credential_misuse`, `lateral_movement`, and `device_spoofing`
 | GET | `/api/drift` | Detected behavior changes |
 | POST/GET | `/api/models/train`, `/api/models/status` | Candidate training and activation status |
 
+Example authentication:
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin"}' | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+```
+
 Example ingestion (timestamps must include a timezone and may not be more than five minutes ahead):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/events/ingest \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "event_id":"live-001","timestamp":"2026-07-24T10:00:00Z",
     "user_id":"usr-042","user_role":"engineer","department":"Engineering",
@@ -210,6 +230,6 @@ With seed 42 on the generated chronological test split, the final verified run p
 
 ## Limitations and production path
 
-Rare classes remain harder than high-volume attack sequences; more scenario diversity and calibrated probabilities are needed. The rolling drift detector is deliberately lightweight, SSE fan-out is process-local, the dashboard has no authentication or map provider, and SQLite is single-node. Real telemetry also carries sensitive identity/location data and needs strict retention and access controls.
+Rare classes remain harder than high-volume attack sequences; more scenario diversity and calibrated probabilities are needed. The rolling drift detector is deliberately lightweight, SSE fan-out is process-local, authentication is a single demo administrator rather than production SSO/RBAC, there is no map provider, and SQLite is single-node. Real telemetry also carries sensitive identity/location data and needs strict retention and access controls.
 
 For production, replace direct ingestion with Kafka/Redis Streams, SQLite with PostgreSQL, rolling history with Redis, artifacts with signed object storage and a model registry, and local inference with horizontally scaled model-serving workers. Add SSO/RBAC, TLS, audit trails, rate limits, OpenTelemetry, dead-letter/replay flows, partitioning by identity, and blue/green candidate approval. See [ARCHITECTURE.md](ARCHITECTURE.md#scalability-path).

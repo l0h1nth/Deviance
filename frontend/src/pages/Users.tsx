@@ -4,7 +4,7 @@ import {api} from '../services/api';
 
 export function UsersPage({initialUser}:{initialUser?:string}){
   const[id,setId]=useState(initialUser||'usr-000'),[profile,setProfile]=useState<any>(null),[timeline,setTimeline]=useState<any[]>([]),[error,setError]=useState('');
-  const load=(user:string)=>{setError('');Promise.all([api.profile(user),fetch(`/api/users/${user}/timeline?limit=20`).then(r=>r.ok?r.json():Promise.reject())]).then(([p,t])=>{setProfile(p);setTimeline(t)}).catch(()=>setError('No persisted profile for this identity yet. Run the stream or try usr-000.'))};
+  const load=(user:string)=>{setError('');Promise.all([api.profile(user),api.timeline(user)]).then(([p,t])=>{setProfile(p);setTimeline(t)}).catch(()=>setError('No persisted profile for this identity yet. Run the stream or try usr-000.'))};
   useEffect(()=>{if(initialUser)load(initialUser)},[initialUser]);
   const submit=(e:FormEvent)=>{e.preventDefault();load(id)};
   return <><header className="page-head"><div><span className="eyebrow">IDENTITY BASELINES</span><h1>User behavior</h1><p>Inspect trusted norms, cold-start fallback, and recent risk.</p></div></header>
@@ -17,4 +17,3 @@ export function UsersPage({initialUser}:{initialUser?:string}){
 }
 
 function ProfileCard({icon,title,value,detail}:{icon:any;title:string;value:string|number;detail?:string}){return <article className="profile-card"><div>{icon}</div><span>{title}</span><strong>{value}</strong>{detail&&<small>{detail}</small>}</article>}
-

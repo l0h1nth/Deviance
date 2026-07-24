@@ -8,21 +8,14 @@ export function Overview({metrics,alerts,model,onSelect}:{metrics:Metrics|null;a
   if(!metrics)return <div className="loading">Loading behavioral telemetry…</div>;
   const open=alerts.filter(a=>a.status==='open').length, investigating=alerts.filter(a=>a.status==='investigating').length, critical=alerts.filter(a=>a.severity==='critical').length;
   const fp=Math.round(metrics.false_positive_rate*100),maxAttack=Math.max(...Object.values(metrics.attacks_by_type),1);
+  const recentRisk=metrics.risk_trend.slice(-20),riskLoad=Math.round(recentRisk.reduce((sum,item)=>sum+item.risk,0)/Math.max(recentRisk.length,1));
   const riskMix=`conic-gradient(#d8387e 0 ${Math.max(critical/Math.max(metrics.total_alerts,1)*100,8)}%, #f6bd19 0 42%, #42bfd3 0 70%, #7656c9 0 100%)`;
   return <>
     <div className="overview-tabs"><button className="active">General</button><button>Live activity</button><button>Model insights</button><button className="run-demo"><Play/> Run simulation</button></div>
 
-    <section className="summary-card">
-      <div className="section-heading"><h2>General information</h2><span>Updated just now</span></div>
-      <div className="summary-fields">
-        <Info label="Detection model" value="Isolation Forest + RF"/>
-        <Info label="Monitoring window" value="Real-time / rolling 5 min"/>
-        <Info label="Feature schema" value={model?.feature_schema_version||'1.0.0'}/>
-        <Info label="Alert threshold" value={model?.alert_threshold?`${model.alert_threshold.toFixed(1)} risk`:'50 risk'}/>
-        <Info label="Mean latency" value={`${metrics.average_detection_latency_ms} ms`} accent/>
-        <Info label="Model version" value={model?.model_version||'Not trained'}/>
-      </div>
-    </section>
+    <section className="behavior-hero"><div className="hero-copy"><span>LIVE BEHAVIOR POSTURE</span><div className="posture-line"><h2>{riskLoad>=70?'Critical behavior pressure':riskLoad>=50?'Elevated behavior pressure':'Behavior remains stable'}</h2><b className={riskLoad>=70?'critical':riskLoad>=50?'elevated':'stable'}>{riskLoad}/100</b></div><p>Deviance is correlating identity, device, location, travel, access, and volume signals across the active organization window.</p><div className="hero-metrics"><div><strong>{metrics.total_events}</strong><span>events analyzed</span></div><div><strong>{open}</strong><span>open detections</span></div><div><strong>{critical}</strong><span>critical priority</span></div><div><strong>{fp}%</strong><span>false positives</span></div></div></div><div className="signal-pulse"><div className="pulse-head"><span>MODEL PULSE</span><b>LIVE</b></div><div className="pulse-bars">{recentRisk.map((item,index)=><i key={index} style={{height:`${Math.max(12,item.risk)}%`}} className={item.risk>=70?'hot':item.risk>=50?'warm':''}/>)}</div><div className="pulse-scale"><span>−20 events</span><span>now</span></div></div></section>
+
+    <section className="system-strip"><Info label="Detection ensemble" value="Isolation Forest + Random Forest"/><Info label="Behavior window" value="Rolling 1–5 minute context"/><Info label="Feature contract" value={`${model?.feature_names?.length||12} signals · schema ${model?.feature_schema_version||'1.0.0'}`}/><Info label="Decision boundary" value={model?.alert_threshold?`${model.alert_threshold.toFixed(1)} risk score`:'50 risk score'}/><Info label="Inference latency" value={`${metrics.average_detection_latency_ms} ms`} accent/></section>
 
     <section className="overview-cards">
       <article className="clean-card status-card"><div className="section-heading"><h2>Detections by status</h2><button>Last 24 hours <ChevronDown/></button></div><div className="status-content"><div className="donut" style={{background:riskMix}}><div><span>Total</span><strong>{metrics.total_alerts}</strong></div></div><div className="status-metrics"><CircleMetric value={open} label="Pending" color="#d8387e" total={metrics.total_alerts}/><CircleMetric value={investigating} label="In progress" color="#f6bd19" total={metrics.total_alerts}/><CircleMetric value={Math.max(0,metrics.total_alerts-open-investigating)} label="Reviewed" color="#42bfd3" total={metrics.total_alerts}/><CircleMetric value={critical} label="Critical" color="#7656c9" total={metrics.total_alerts}/></div></div></article>

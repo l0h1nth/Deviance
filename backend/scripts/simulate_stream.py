@@ -39,15 +39,17 @@ def select_events(events: list[AccessEvent], scenario: str) -> list[AccessEvent]
     return result
 
 
-def simulate(scenario: str, interval: float, api_url: str) -> None:
+def simulate(scenario: str, interval: float, api_url: str, username: str = "admin", password: str = "admin") -> None:
     path = get_settings().data_dir / "processed" / "demo_stream.jsonl"
     if not path.exists(): raise SystemExit("Demo stream missing. Run generate_data.py first.")
     events = select_events(load_stream(path), scenario)
+    login = httpx.post(f"{api_url.rstrip('/')}/api/auth/login", json={"username": username, "password": password}, timeout=30)
+    login.raise_for_status(); headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     for index, event in enumerate(events):
         payload = event.model_dump(mode="json", exclude={"ground_truth_label"})
         payload["event_id"] = f"demo-{scenario}-{uuid.uuid4().hex[:12]}"
         try:
-            response = httpx.post(f"{api_url.rstrip('/')}/api/events/ingest", json=payload, timeout=30)
+            response = httpx.post(f"{api_url.rstrip('/')}/api/events/ingest", json=payload, headers=headers, timeout=30)
             response.raise_for_status(); result = response.json()
             print(f"[{index+1:03d}/{len(events):03d}] {result['event_id']} risk={result['risk_score']:5.1f} "
                   f"class={result['predicted_attack']} alert={result.get('alert_id')}")
@@ -58,5 +60,5 @@ def simulate(scenario: str, interval: float, api_url: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(); parser.add_argument("--scenario", choices=SCENARIOS, default="mixed")
     parser.add_argument("--interval", type=float, default=1); parser.add_argument("--api-url", default="http://127.0.0.1:8000")
-    args = parser.parse_args(); simulate(args.scenario, args.interval, args.api_url)
-
+    parser.add_argument("--username", default="admin"); parser.add_argument("--password", default="admin")
+    args = parser.parse_args(); simulate(args.scenario, args.interval, args.api_url, args.username, args.password)
