@@ -97,8 +97,18 @@ Available scenarios are `mixed`, `brute_force`, `credential_stuffing`, `lateral_
 1. Restart the backend and frontend, sign in, and confirm the fresh dashboard begins at zero events and detections.
 2. Run `brute_force` with 8 or more events at 500 ms. **Detections by attack class** counts detected events, so Brute Force should advance once per alert-worthy event even when they correlate into one incident.
 3. Run `concept_drift` with exactly 40 events at 500 ms. The first 20 trusted events establish the reference access-hour window; the next 20 shift from approximately 09:00 to 19:00.
-4. Open **Drift monitor**. During the run it shows reference/current window progress; at completion it should show an `access hour` drift record with the previous and current distributions.
-5. Use `insider_drift` separately as the legitimate edge-case/false-positive demonstration. It is not an attack classifier output and is not the deterministic concept-drift trigger.
+4. Open **Drift monitor**. During the run it shows persistent reference/current window progress; at completion it should freeze `access hour` for review with effect-size and KS evidence.
+5. Mark the finding **Investigating**, then either **Approve baseline** after verifying the legitimate shift or **Reject change** to retain the prior trusted reference. Neither path retrains the model automatically.
+6. Restart the backend and return to **Drift monitor** to verify that window progress and dispositions survive process restarts.
+7. Use `insider_drift` separately as the legitimate edge-case/false-positive demonstration. It is not an attack classifier output and is not the deterministic concept-drift trigger.
+
+Run the deterministic Phase 2 benchmark with:
+
+```bash
+.venv/bin/python backend/scripts/evaluate_drift.py --stable-entities 100 --drift-entities 100
+```
+
+The benchmark reports entity-level drift precision/recall, stable-entity false-positive rate, detection delay, and the enforced adaptation safety contract. See [Phase 2 concept drift](docs/PHASE2_CONCEPT_DRIFT.md) for the complete lifecycle.
 
 ## Example production-shaped event
 

@@ -99,11 +99,11 @@ Each result includes the observed feature, expected baseline, normalized deviati
 
 ## Persistence
 
-SQLite tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, drift events, and model-run history. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty schema-3-compatible database.
+SQLite tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, durable drift windows, drift findings, and model-run history. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty schema-3-compatible database.
 
 ## Drift
 
-Trusted-only rolling reference/current windows monitor login time, location, device novelty, download volume, resource novelty, privilege expansion, sequence anomaly, and point anomaly. Detected changes are reviewable; they do not trigger automatic blind retraining. The simulator provides both legitimate concept drift and ambiguous insider drift.
+Trusted-only rolling 20-event reference/current windows monitor circular access time, location, device novelty, download volume, resource novelty, privilege expansion, sequence anomaly, and point anomaly. A feature-specific minimum shift, standardized effect size, and empirical KS distance must all agree before a finding is created. Detected windows freeze until an analyst approves adaptation or rejects the change; they never trigger automatic blind retraining. Stable windows roll forward, and all state and review history survive process restarts. The simulator provides both legitimate concept drift and ambiguous insider drift.
 
 ## Scalability path
 

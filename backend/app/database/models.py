@@ -134,6 +134,22 @@ class DriftEventRecord(Base):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class DriftWindowRecord(Base):
+    """Durable trusted-only reference/current windows used by the drift monitor."""
+    __tablename__ = "drift_windows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    window_key: Mapped[str] = mapped_column(String(300), unique=True, index=True)
+    subject_id: Mapped[str] = mapped_column(String(180), index=True)
+    feature: Mapped[str] = mapped_column(String(100), index=True)
+    reference_values: Mapped[list] = mapped_column(JSON, default=list)
+    current_values: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(40), default="collecting_reference", index=True)
+    trusted_observations: Mapped[int] = mapped_column(Integer, default=0)
+    baseline_version: Mapped[int] = mapped_column(Integer, default=1)
+    last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    adapted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ModelVersionRecord(Base):
     __tablename__ = "model_versions"
     id: Mapped[int] = mapped_column(primary_key=True)

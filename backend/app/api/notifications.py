@@ -20,7 +20,8 @@ def notifications(db: Session = Depends(get_db)):
         items.append({"id": f"alert-{alert.id}", "type": "critical_alert", "title": "Critical behavior alert",
                       "message": f"{alert.prediction.predicted_attack.replace('_', ' ')} · {alert.prediction.event.user_id}",
                       "created_at": alert.created_at, "page": "investigation", "alert_id": alert.id})
-    drifts = db.scalars(select(DriftEventRecord).order_by(desc(DriftEventRecord.detected_at)).limit(3))
+    recent_drifts = db.scalars(select(DriftEventRecord).order_by(desc(DriftEventRecord.detected_at)).limit(20))
+    drifts = [row for row in recent_drifts if row.metadata_json.get("review_status", "pending") in {"pending", "investigating"}][:3]
     for drift in drifts:
         items.append({"id": f"drift-{drift.id}", "type": "drift_warning", "title": "Concept drift warning",
                       "message": f"{drift.subject_id} · {drift.feature.replace('_', ' ')}",

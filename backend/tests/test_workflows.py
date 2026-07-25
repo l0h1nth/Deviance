@@ -86,7 +86,7 @@ def test_drift_window_progress_is_trusted_only(tmp_path):
     values = {"access_hour": 9, "location_novelty_score": 0, "new_device_score": 0,
               "download_volume_zscore": 0, "session_duration_zscore": 0, "anomaly_score": 0}
     for _ in range(12): service.observe("trusted-user", values)
-    status = DriftService.window_status()[0]
+    status = service.window_status()[0]
     assert status["reference_window"]["count"] == 12 and status["current_window"]["count"] == 0
     assert status["trusted_events_only"] is True
 
@@ -105,3 +105,34 @@ def test_access_hour_shift_creates_drift_record(tmp_path):
     db.commit()
     records = list(db.scalars(select(DriftEventRecord)))
     assert any(record.feature == "access_hour" and record.magnitude >= 2.5 for record in records)
+
+
+def test_drift_review_api_promotes_only_after_analyst_approval():
+    from sqlalchemy import select
+    from app.database.models import DriftEventRecord
+    from app.database.session import SessionLocal
+    with TestClient(app) as client:
+        headers = auth(client)
+        with SessionLocal() as db:
+            service = DriftService(db); found = []
+            stable = {"access_hour": 8.0}; shifted = {"access_hour": 18.0}
+            for _ in range(20): found.extend(service.observe("api-review-user", stable))
+            for _ in range(20): found.extend(service.observe("api-review-user", shifted))
+            db.commit()
+            finding = next(row for row in found if row.feature == "access_hour")
+            finding_id = finding.id
+        investigating = client.patch(f"/api/drift/{finding_id}", headers=headers,
+            json={"action": "investigate", "comment": "Checking HR shift ticket"})
+        assert investigating.status_code == 200
+        assert investigating.json()["review_status"] == "investigating"
+        approved = client.patch(f"/api/drift/{finding_id}", headers=headers,
+            json={"action": "approve_adaptation", "comment": "Shift ticket verified"})
+        assert approved.status_code == 200
+        assert approved.json()["review_status"] == "approved_adaptation"
+        repeated = client.patch(f"/api/drift/{finding_id}", headers=headers,
+            json={"action": "reject_change", "comment": "Too late"})
+        assert repeated.status_code == 409
+        response = client.get("/api/drift", headers=headers).json()
+        assert response["summary"]["approved_adaptations"] >= 1
+        window = next(item for item in response["windows"] if item["entity"] == "api-review-user")
+        assert window["baseline_version"] == 2 and window["status"] == "collecting_current"

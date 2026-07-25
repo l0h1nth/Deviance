@@ -1,15 +1,16 @@
 import json
 
 from fastapi import APIRouter, BackgroundTasks, Depends
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database.models import DriftEventRecord, PredictionRecord
+from app.database.models import PredictionRecord
 from app.database.session import get_db
 from app.ml.model_bundle import ModelBundle
 from app.ml.training import train
 from app.services.prediction_service import PredictionService
+from app.services.drift_service import DriftService
 
 router = APIRouter(prefix="/models", tags=["models"])
 training_state = {"status": "idle", "error": None}
@@ -59,7 +60,7 @@ def status(db: Session = Depends(get_db)):
                       classifier=bundle.attack_classifier.model_metadata(),
                       last_trained_at=bundle.metrics.get("trained_at"), artifact_status="loaded",
                       average_inference_latency_ms=round(float(db.scalar(select(func.avg(PredictionRecord.latency_ms))) or 0), 2),
-                      drift_state="warning" if db.scalar(select(DriftEventRecord.id).order_by(desc(DriftEventRecord.detected_at)).limit(1)) else "stable")
+                      drift_state=DriftService(db).summary()["state"])
     else:
         result.update(artifact_status="missing", drift_state="unknown", average_inference_latency_ms=0)
     return result
