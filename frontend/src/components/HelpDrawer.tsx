@@ -1,11 +1,12 @@
 import {X} from 'lucide-react';
 
 const topics=[
-  ['Behavioral anomaly detection','Deviance compares each event with trusted user, peer, or organization history. Isolation Forest and the attack classifier remain the primary detectors.'],
-  ['Risk score','Overall danger from anomaly evidence, malicious-class probability, behavioral deviation, and resource criticality.'],
-  ['Anomaly score','Isolation Forest output measuring how unusual the 24-feature vector is compared with normal-only training data.'],
+  ['Behavioral anomaly detection','Deviance compares each event with trusted user, device, peer, or organization history. Global and signal-domain Isolation Forests plus the GRU are trained only on normal behavior.'],
+  ['Risk score','Overall priority from normal-only anomaly evidence, known-attack probability, profile deviation, and resource criticality.'],
+  ['Anomaly score','An ensemble of global, authentication, identity/device/geo, resource/network, and volume/timing Isolation Forest scores. Every forest is fit only on normal training events.'],
   ['Sequence score','GRU reconstruction error measuring whether an entity’s current event is unexpected given its preceding event sequence.'],
   ['Classifier confidence','Certainty about the predicted attack class. It is separate from risk and low-confidence predictions remain visible.'],
+  ['Finding vs priority','The finding threshold maximizes attack recall under a validation false-positive constraint. A higher independently frozen threshold identifies the top-priority analyst queue.'],
   ['Cold start','When trusted user history is insufficient, peer or global behavior supplies the baseline with lower confidence.'],
   ['Concept drift','A statistically significant change between trusted reference and current windows. Drift is reviewed; it does not activate a new model.'],
   ['Analyst statuses','Open, Investigating, Confirmed Threat, False Positive, and Closed. Every update is saved in feedback history.'],

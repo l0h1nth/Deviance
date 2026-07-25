@@ -1,14 +1,14 @@
 {
-  "model_version": "v20260724-195438",
+  "model_version": "v20260725-125955",
   "feature_schema_version": "2.0.0",
   "events": 1000,
   "warmup_events": 100,
   "latency_ms": {
-    "p50": 58.234090502082836,
-    "p95": 79.43782204820307,
-    "p99": 90.14339121997182,
-    "mean": 59.069567535512356
+    "p50": 106.85034650009584,
+    "p95": 116.41932910015383,
+    "p99": 125.97665122008036,
+    "mean": 106.40471683889449
   },
-  "sequential_throughput_events_per_second": 16.923283671188894,
-  "environment": "single Python process; feature vectors precomputed; per-event scaler + IF + GRU + RF"
+  "sequential_throughput_events_per_second": 9.391033069233432,
+  "environment": "single Python process; feature vectors precomputed; per-event scaler + global/4-domain IF + GRU + random_forest"
 }

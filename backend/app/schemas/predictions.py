@@ -15,6 +15,8 @@ class PredictionResponse(BaseModel):
     entity_type: str
     anomaly_score: float = Field(ge=0, le=1)
     sequence_anomaly_score: float = Field(ge=0, le=1)
+    behavioral_score: float = Field(ge=0, le=1)
+    domain_anomaly_scores: dict[str, float]
     predicted_attack: str
     display_attack: str
     class_probabilities: dict[str, float]

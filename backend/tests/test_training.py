@@ -25,10 +25,12 @@ def test_training_pipeline(tmp_path):
     bundle=train(tmp_path,models,seed=7)
     assert (models/"current.joblib").exists() and bundle.feature_schema_version=="2.0.0"
     assert bundle.metrics["test"]["sample_count"]==len(splits["test"])
-    x_train,y_train,_,_=featurize_splits(splits)["train"];normal_mask=y_train=="normal"
+    x_train,y_train,_,_,_,_=featurize_splits(splits)["train"];normal_mask=y_train=="normal"
     np.testing.assert_allclose(bundle.scaler.center_,np.median(x_train[normal_mask],axis=0))
     population=bundle.metrics["training_population"]
     assert population["normal_rows"]==int(normal_mask.sum())
     assert population["preprocessor_fit"]=="normal_only"
     assert population["sequence_detector_fit"]=="normal_sequences_only"
-    assert bundle.metrics["threshold_selection"]["selection_method"].endswith("top 1% analyst alert budget")
+    assert "0.10% normal-event FPR" in bundle.metrics["threshold_selection"]["selection_method"]
+    assert bundle.attack_classifier.model_kind in {"random_forest", "xgboost"}
+    assert bundle.anomaly_detector.model_metadata()["type"] == "DomainIsolationForestEnsemble"

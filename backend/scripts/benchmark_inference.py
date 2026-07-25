@@ -45,7 +45,11 @@ def run(count: int = 1000, warmup: int = 100) -> dict:
         "latency_ms": {"p50": float(np.percentile(measured, 50)), "p95": float(np.percentile(measured, 95)),
                        "p99": float(np.percentile(measured, 99)), "mean": float(np.mean(measured))},
         "sequential_throughput_events_per_second": len(vectors) / max(wall, 1e-9),
-        "environment": "single Python process; feature vectors precomputed; per-event scaler + IF + GRU + RF",
+        "environment": (
+            "single Python process; feature vectors precomputed; per-event scaler + "
+            f"global/{len(bundle.anomaly_detector.domain_models)}-domain IF + GRU + "
+            f"{bundle.attack_classifier.model_kind}"
+        ),
     }
     (settings.model_dir / "benchmark.json").write_text(json.dumps(result, indent=2))
     return result

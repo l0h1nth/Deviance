@@ -54,7 +54,9 @@ def status(db: Session = Depends(get_db)):
     if path.is_file():
         bundle = ModelBundle.load(path, settings.model_dir)
         result.update(model_version=bundle.version, feature_schema_version=bundle.feature_schema_version,
-                      alert_threshold=bundle.alert_threshold,
+                      alert_threshold=bundle.alert_threshold, behavioral_threshold=bundle.behavioral_threshold,
+                      priority_threshold=bundle.priority_threshold,
+                      classifier=bundle.attack_classifier.model_metadata(),
                       last_trained_at=bundle.metrics.get("trained_at"), artifact_status="loaded",
                       average_inference_latency_ms=round(float(db.scalar(select(func.avg(PredictionRecord.latency_ms))) or 0), 2),
                       drift_state="warning" if db.scalar(select(DriftEventRecord.id).order_by(desc(DriftEventRecord.detected_at)).limit(1)) else "stable")

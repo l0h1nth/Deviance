@@ -20,7 +20,7 @@ flowchart LR
     VALIDATE --> PROFILE[Entity → device → peer → global baseline]
     PROFILE --> LIVEFE[Same 24-feature pipeline]
     BUNDLE --> LIVEFE
-    LIVEFE --> SCORE[IF + GRU + calibrated RF]
+    LIVEFE --> SCORE[Domain IF ensemble + GRU + selected calibrated classifier]
     SCORE --> RISK[Weighted risk + explanations]
     RISK --> INCIDENT[15-minute incident correlation]
     INCIDENT --> DB[(Events / predictions / incidents / feedback)]

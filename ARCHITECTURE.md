@@ -57,25 +57,25 @@ Only normal training rows and trusted runtime outcomes update habitual profiles.
 
 ## Models
 
-Isolation Forest is fitted on scaled normal rows and detects tabular point anomalies without attack labels.
+One global Isolation Forest and four domain forests are fitted on scaled normal rows only. The domains isolate authentication, identity/device/geography, resource/network, and volume/timing signals. Their maximum and mean scores are blended with the global score so a sparse attack is not diluted by unrelated normal features.
 
-The sequence detector implements GRU reset/update recurrence in a deterministic NumPy recurrent reservoir. A ridge decoder learns to predict the next normal feature vector from up to ten prior entity events. Reconstruction error is normalized from normal-only training errors. This provides genuine gated recurrence without adding a heavyweight deep-learning runtime to the hackathon bundle.
+The sequence detector implements GRU reset/update recurrence in a deterministic NumPy recurrent reservoir. A ridge decoder learns to predict the next normal feature vector from up to twelve prior entity events. The five strongest reconstruction residuals form the error, which is normalized from normal-only training errors. This provides genuine gated recurrence without adding a heavyweight deep-learning runtime to the hackathon bundle.
 
-The Random Forest is class-balanced, has 240 trees and minimum leaf size two, and is trained on normal plus all known attacks. Per-class one-vs-rest sigmoid calibrators are learned from validation probabilities. If anomaly evidence is very high but no malicious class reaches defensible confidence, the result is `unknown_anomaly`.
+A balanced 320-tree Random Forest and a regularized XGBoost candidate are trained on normal plus all known attacks. A dedicated validation partition selects the candidate with the strongest Macro F1, using malicious PR-AUC as a tie-break. A different validation partition fits per-class one-vs-rest sigmoid calibrators. If normal-only behavioral evidence is high but no malicious class reaches defensible confidence, the result is `unknown_anomaly`.
 
 ## Risk and explainability
 
 Final risk is bounded to 0–100:
 
 ```text
-100 × (0.35 × Isolation Forest
-     + 0.25 × GRU sequence anomaly
+100 × (0.30 × domain/global Isolation Forest
+     + 0.05 × GRU sequence anomaly
      + 0.25 × strongest malicious class probability
-     + 0.10 × profile deviation
+     + 0.35 × profile deviation
      + 0.05 × resource criticality)
 ```
 
-Validation selects the risk cutoff at the top 1% event budget. Evaluation reports alert precision/recall, normal-event alert rate, top-1% precision/recall, alerts per 10,000 events, per-class precision/recall/F1, and both anomaly PR-AUC values.
+Validation fixes two risk cutoffs. The broad finding threshold maximizes validation attack recall subject to a 0.10% normal-event false-positive constraint. The independent priority threshold is fixed at the highest-risk one percent of its validation partition. Evaluation reports event, scenario, and attacked-entity recall; finding and priority precision/recall/FPR; known-class and open-set results; and anomaly, sequence, classifier, and behavioral PR-AUC.
 
 Each result includes the observed feature, expected baseline, normalized deviation, model components, plain-language rationale, recommended response, model/schema versions, and baseline/cold-start context.
 
@@ -85,7 +85,7 @@ Each result includes the observed feature, expected baseline, normalized deviati
 2. Pydantic rejects unknown fields, invalid ranges, naive timestamps, and excessively future timestamps.
 3. The service checks event-id idempotency and loads recent entity/IP history.
 4. It selects an entity/device/peer/global baseline and extracts 24 features.
-5. The active bundle applies the scaler, Isolation Forest, GRU, and calibrated Random Forest.
+5. The active bundle applies the scaler, five normal-only Isolation Forests, GRU, and the validation-selected calibrated classifier.
 6. The risk service composes score, severity, evidence, rationale, and response actions.
 7. Event and prediction records are persisted.
 8. Findings crossing the threshold are correlated by entity, predicted class, and 15-minute bucket. The incident keeps its event count and maximum-risk anchor.

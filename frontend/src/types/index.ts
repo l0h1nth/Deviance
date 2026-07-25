@@ -29,6 +29,7 @@ export type LiveEvent={
   event_id:string;timestamp:string;entity_id:string;entity_type:string;user_id:string;device_id:string;event_type:string;
   location:{city:string;country:string;latitude?:number;longitude?:number};authentication_result:string;
   predicted_attack:string;display_attack?:string;anomaly_score:number;sequence_anomaly_score:number;classifier_confidence:number;
+  behavioral_score:number;domain_anomaly_scores:Record<string,number>;
   class_probabilities:Record<string,number>;risk_score:number;severity:string;latency_ms:number;
   features:Record<string,number>;feature_evidence:FeatureEvidence[];baseline_type:string;baseline_confidence:number;
   model_version:string;feature_schema_version:string;top_contributing_features:FeatureEvidence[];

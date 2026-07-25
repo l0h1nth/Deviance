@@ -34,14 +34,13 @@ def overview(db: Session = Depends(get_db)):
         AlertRecord, AlertRecord.prediction_id == PredictionRecord.id).group_by(PredictionRecord.predicted_attack)).all())
     trend_rows = list(db.scalars(select(PredictionRecord).order_by(desc(PredictionRecord.id)).limit(50)))
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
-    holdout_fpr = float(bundle.metrics.get("test", {}).get("false_positive_rate", 0))
     holdout = bundle.metrics.get("test", {}); budget = holdout.get("top_1_percent", {})
     return {"events_analyzed": events_analyzed, "total_alerts": total_alerts,
             "unresolved_alerts": unresolved_alerts, "open_alerts": open_alerts,
             "investigating_alerts": investigating_alerts, "reviewed_alerts": reviewed_alerts,
             "critical_alerts": critical_alerts,
             "analyst_false_positive_rate_24h": false_positive_24h / max(reviewed_24h, 1),
-            "holdout_false_positive_rate": holdout_fpr,
+            "holdout_false_positive_rate": float(holdout.get("alert_false_positive_rate", 0)),
             "holdout_alert_rate": float(holdout.get("alert_rate", 0)),
             "top_1_percent_precision": float(budget.get("precision", 0)),
             "top_1_percent_recall": float(budget.get("recall", 0)),
@@ -55,5 +54,8 @@ def model_metrics():
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
     return {"model_version": bundle.version, "feature_schema_version": bundle.feature_schema_version,
             "feature_names": bundle.feature_names, "alert_threshold": bundle.alert_threshold,
+            "behavioral_threshold": bundle.behavioral_threshold, "priority_threshold": bundle.priority_threshold,
+            "classifier": bundle.attack_classifier.model_metadata(),
+            "classifier_candidates": bundle.classifier_candidates,
             "anomaly_model": bundle.anomaly_detector.model_metadata(),
             "sequence_model": bundle.sequence_detector.model_metadata(), "metrics": bundle.metrics}

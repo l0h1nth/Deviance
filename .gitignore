@@ -14,5 +14,6 @@ data/models/*.joblib
 data/models/metrics.json
 data/raw/*.jsonl
 data/processed/*.jsonl
+data/processed/manifest.json
 .env
 .DS_Store

@@ -8,15 +8,15 @@ Command:
 python backend/scripts/benchmark_inference.py --events 1000 --warmup 100
 ```
 
-Environment: one local Python process, feature vectors precomputed, one event scored at a time through scaler + 180-tree Isolation Forest + GRU recurrence + calibrated 240-tree Random Forest. Model `v20260724-195438`, schema 2.0.0.
+Environment: one local Python process, feature vectors precomputed, one event scored at a time through the scaler, one global plus four domain Isolation Forests, GRU recurrence, and the calibrated validation-selected Random Forest. Model `v20260725-125955`, schema 2.0.0.
 
 | Measure | Result |
 |---|---:|
-| Median model latency | 58.23 ms |
-| P95 model latency | 79.44 ms |
-| P99 model latency | 90.14 ms |
-| Mean model latency | 59.07 ms |
-| Sequential throughput | 16.92 events/second |
+| Median model latency | 106.85 ms |
+| P95 model latency | 116.42 ms |
+| P99 model latency | 125.98 ms |
+| Mean model latency | 106.40 ms |
+| Sequential throughput | 9.39 events/second |
 
 The measured path is comfortably interactive for the solo demonstration but is not a high-volume SIEM benchmark. It excludes HTTP, database, feature extraction, network, and queue time, so production capacity must be measured end to end.
 
@@ -32,7 +32,7 @@ collectors → durable stream → entity-partitioned feature workers
            → analytical store + SOC API + notification tier
 ```
 
-At the measured single-worker rate, 100 identical inference workers imply roughly 1,690 events/second before orchestration overhead; this is a planning estimate, not a measured claim. Batch scoring can improve tree-model efficiency, while per-entity micro-batches retain short-window ordering.
+At the measured single-worker rate, 100 identical inference workers imply roughly 939 events/second before orchestration overhead; this is a planning estimate, not a measured claim. Batch scoring can improve tree-model efficiency, while per-entity micro-batches retain short-window ordering.
 
 ## Required production work
 

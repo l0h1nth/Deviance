@@ -66,7 +66,8 @@ class PredictionService:
             device.last_seen, device.fingerprint = event.timestamp, event.device_fingerprint
         vector, metadata = self.pipeline.transform_one(event, history, baseline)
         inference = self.bundle.infer(vector, self._sequence_vectors(event))
-        risk_data = RiskService().score(inference, inference["scaled_vector"], event, baseline.confidence)
+        risk_data = RiskService(self.bundle.risk_weights, self.bundle.priority_threshold).score(
+            inference, inference["scaled_vector"], event, baseline.confidence)
         contributions = explain_features(metadata["values"], inference["scaled_vector"], self.bundle.attack_classifier.feature_importances_)
         feature_evidence = [{
             "feature": definition.name, "value": float(metadata["values"][definition.name]),
@@ -86,7 +87,9 @@ class PredictionService:
         explanation_json = {"top_contributing_features": contributions, "feature_evidence": feature_evidence,
                             "risk_composition": risk_data["risk_composition"], "text": explanation,
                             "recommended_actions": RiskService.actions(predicted, risk_data["severity"]), "cold_start": cold_start,
-                            "sequence_window": self.bundle.sequence_detector.window_size}
+                            "sequence_window": self.bundle.sequence_detector.window_size,
+                            "behavioral_score": inference["behavioral_score"],
+                            "domain_anomaly_scores": inference["domain_anomaly_scores"]}
         prediction = PredictionRecord(event_db_id=event_record.id, features=metadata["values"],
             anomaly_score=inference["anomaly_score"], sequence_anomaly_score=inference["sequence_anomaly_score"],
             predicted_attack=predicted, classifier_confidence=inference["classifier_confidence"],
@@ -122,6 +125,8 @@ class PredictionService:
         return {
             "event_id": event.event_id, "entity_id": event.entity_id, "entity_type": event.entity_type,
             "anomaly_score": inference["anomaly_score"], "sequence_anomaly_score": inference["sequence_anomaly_score"],
+            "behavioral_score": inference["behavioral_score"],
+            "domain_anomaly_scores": inference["domain_anomaly_scores"],
             "predicted_attack": predicted, "display_attack": display,
             "class_probabilities": inference["class_probabilities"], "classifier_confidence": inference["classifier_confidence"],
             "model_confidence": risk_data["model_confidence"], "baseline_confidence": baseline.confidence,
