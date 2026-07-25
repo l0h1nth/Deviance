@@ -18,14 +18,14 @@ from app.ml.preprocessing import build_scaler
 from app.ml.risk_policy import DEFAULT_RISK_WEIGHTS, RiskWeights, behavioral_score, combine_risk
 from app.ml.sequence_model import GRUSequenceDetector
 from app.schemas.events import AccessEvent, LabeledEvent, TrainingLabel
-from app.services.profile_service import Baseline, EMPTY_PROFILE
+from app.services.profile_service import Baseline, EMPTY_PROFILE, empty_profile_data, update_profile_data
 
 
 class MemoryProfiles:
     """Leakage-safe normal-only profiles used while walking events chronologically."""
     def __init__(self, entity_min: int = 12, peer_min: int = 25):
         self.entity_min, self.peer_min = entity_min, peer_min
-        self.profiles: dict[str, dict] = defaultdict(lambda: {**{key: [] for key in EMPTY_PROFILE}, "count": 0})
+        self.profiles: dict[str, dict] = defaultdict(lambda: {**empty_profile_data(), "count": 0})
 
     def _key(self, kind: str, event: AccessEvent) -> str:
         if kind == "entity": return f"entity:{event.entity_id}"
@@ -46,20 +46,8 @@ class MemoryProfiles:
     def update(self, event: AccessEvent, label: str) -> None:
         if label != "normal": return
         for kind in ("entity", "device", "peer", "global"):
-            data = self.profiles[self._key(kind, event)]; data["count"] += 1
-            if event.authentication_result == "success":
-                data["login_hours"] = (data["login_hours"] + [event.timestamp.hour + event.timestamp.minute / 60])[-500:]
-                for key, value, limit in [("devices", event.device_id, 50), ("fingerprints", event.device_fingerprint, 50),
-                                          ("locations", f"{event.country}|{event.city}", 50), ("auth_methods", event.auth_method, 10)]:
-                    data[key] = list(dict.fromkeys(data[key] + [value]))[-limit:]
-            data["downloads"] = (data["downloads"] + [event.bytes_downloaded])[-500:]
-            data["uploads"] = (data["uploads"] + [event.bytes_uploaded])[-500:]
-            data["session_durations"] = (data["session_durations"] + [event.session_duration_seconds])[-500:]
-            data["resources"] = list(dict.fromkeys(data["resources"] + [event.resource_id]))[-150:]
-            if event.is_privileged_action:
-                data["privileged_resources"] = list(dict.fromkeys(data["privileged_resources"] + [event.resource_id]))[-100:]
-            data["commands"] = list(dict.fromkeys(data["commands"] + event.command_sequence))[-200:]
-            data["protocol_ports"] = list(dict.fromkeys(data["protocol_ports"] + [f"{event.network_protocol}:{event.destination_port}"]))[-50:]
+            key = self._key(kind, event); current = self.profiles[key]; count = int(current.get("count", 0))
+            updated = update_profile_data(current, event); updated["count"] = count + 1; self.profiles[key] = updated
 
 
 def load_split(event_path: Path, label_path: Path) -> list[LabeledEvent]:
@@ -285,7 +273,9 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     if not np.any(normal_mask): raise ValueError("Training data must contain normal events")
     scaler = build_scaler().fit(x_train[normal_mask]); scaled_train = scaler.transform(x_train)
     anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[normal_mask])
-    sequence = GRUSequenceDetector(len(FeaturePipeline.names), random_state=seed).fit(scaled_train, y_train, train_entities)
+    sequence = GRUSequenceDetector(
+        len(FeaturePipeline.names), random_state=seed, feature_indices=FeaturePipeline.sequence_feature_indices,
+    ).fit(scaled_train, y_train, train_entities)
     val_x, val_y, val_entities, _, val_scenarios, val_criticality = featured["validation"]
     calibration_indices, selection_indices, threshold_indices = validation_partitions(val_y)
     scaled_val = scaler.transform(val_x); candidate_models, candidate_results = {}, {}

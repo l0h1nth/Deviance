@@ -25,10 +25,10 @@ class IsolationForestDetector(AnomalyDetector):
                                      random_state=random_state, n_jobs=-1)
         self.score_low = 0.0; self.score_high = 1.0
         self.domain_indices = {
-            "authentication": np.asarray([0, 1, 2, 11, 12, 13, 14, 15, 23]),
-            "identity_device_geo": np.asarray([3, 4, 5, 6, 16]),
-            "resource_network": np.asarray([7, 8, 17, 18, 19, 20]),
-            "volume_timing": np.asarray([9, 10, 21, 22]),
+            "authentication_api": np.arange(0, 9),
+            "identity_device_geo": np.arange(9, 17),
+            "resource_network": np.arange(17, 25),
+            "volume_timing": np.arange(25, 32),
         }
         self.domain_models: dict[str, IsolationForest] = {}
         self.domain_ranges: dict[str, tuple[float, float]] = {}

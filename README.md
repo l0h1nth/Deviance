@@ -9,7 +9,7 @@ It implements the full hackathon brief: synthetic behavioral data, extreme class
 - Production telemetry has no label. Ground truth exists only in offline `*_labels.jsonl` sidecars.
 - The scaler, one global Isolation Forest, four signal-domain Isolation Forests, bundled cold-start profile priors, and GRU sequence detector learn only normal events.
 - Random Forest and XGBoost candidates learn normal plus seven labeled attack types. A dedicated validation partition selects the stronger candidate, and separate validation data calibrates its probabilities.
-- Twenty-four behavioral features cover short windows, 30-day history, identity/device novelty, IP fan-out, travel, commands, privilege expansion, protocols, upload/download behavior, and off-hours activity.
+- Thirty-two behavioral features cover API/authentication windows, 30-day history, identity/device novelty, IP fan-out, travel, actions, ordered commands, entropy, privilege expansion, protocols, and cumulative transfers.
 - Risk combines 30% domain/global anomaly evidence, 5% GRU sequence novelty, 25% classifier evidence, 35% profile deviation, and 5% resource criticality.
 - High anomaly with weak known-class evidence produces `unknown_anomaly` instead of a forced attack label.
 - A recall-oriented finding threshold is constrained by validation false positives; a second frozen threshold reserves the highest-risk one percent for priority triage.
@@ -25,7 +25,7 @@ Deviance/
 ├── backend/app/
 │   ├── api/          # authenticated FastAPI routes
 │   ├── database/     # event, prediction, incident, feedback, drift tables
-│   ├── ml/           # 24 features, domain IFs, GRU, RF/XGBoost selection
+│   ├── ml/           # 32 features, domain IFs, GRU, RF/XGBoost selection
 │   ├── services/     # inference, profiles, risk, explanations, SSE, drift
 │   └── synthetic/    # entities, normal behavior, injected scenarios
 ├── backend/scripts/  # generate, train, evaluate, benchmark, simulate
@@ -49,7 +49,7 @@ python backend/scripts/generate_data.py
 python backend/scripts/train_models.py --contamination 0.03
 ```
 
-The default seed-42 corpus contains 400 entities and 73,807 train/validation/test events. The splits are entity-disjoint, chronological, and approximately 2.5% attacks. `data/processed/manifest.json` records exact counts and integrity checks after generation.
+The default seed-42 corpus contains 400 entities and 73,399 train/validation/test events: 72,000 normal events plus 1,399 attack events from scenarios injected at approximately 1% of normal sessions. The splits are entity-disjoint and chronological. `data/processed/manifest.json` records both scenario and event prevalence plus integrity checks.
 
 ## Run the application
 
@@ -84,7 +84,7 @@ Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` before any non-demo
 1. Sign in and open **Run simulation**.
 2. Select `mixed` to show multiple attack classes, or select a focused scenario.
 3. Watch validated events arrive in **Live activity** through authenticated SSE.
-4. Select an event in **Model insights** to compare Isolation Forest, GRU, classifier probabilities, the 24 features, and the final weighted risk.
+4. Select an event in **Model insights** to compare Isolation Forest, GRU, classifier probabilities, the 32 features, and the final weighted risk.
 5. Open **Detections**, which is risk-ranked and incident-grouped.
 6. Open an incident to inspect the correlated timeline, raw telemetry, entity/device/network evidence, and recommended response.
 7. Mark it investigating, confirmed threat, false positive, or closed; the disposition is persisted in its audit history.
@@ -119,12 +119,18 @@ Available scenarios are `mixed`, `brute_force`, `credential_misuse`, `credential
   "latitude": 12.9716,
   "longitude": 77.5946,
   "event_type": "login",
+  "action": "authenticate",
+  "access_outcome": "allowed",
   "authentication_result": "success",
   "auth_method": "password",
+  "mfa_result": "not_used",
   "resource_id": "git",
   "resource_type": "repository",
   "resource_sensitivity": 0.5,
   "destination_host": "git.internal",
+  "source_network_zone": "corporate",
+  "destination_network_zone": "internal",
+  "is_external_destination": false,
   "network_protocol": "https",
   "destination_port": 443,
   "command_sequence": [],
@@ -132,6 +138,8 @@ Available scenarios are `mixed`, `brute_force`, `credential_misuse`, `credential
   "bytes_downloaded": 2400,
   "session_id": "session-live-001",
   "session_duration_seconds": 900,
+  "device_connection_action": "not_applicable",
+  "device_class": "workstation",
   "is_vpn": false,
   "is_privileged_action": false
 }
@@ -155,13 +163,13 @@ curl -X POST http://127.0.0.1:8000/api/events/ingest \
 
 ```bash
 source .venv/bin/activate
-python backend/scripts/generate_data.py --seed 42 --users 400 --events-per-user 180 --attack-rate 0.025
+python backend/scripts/generate_data.py --seed 42 --users 400 --events-per-user 180 --attack-rate 0.01
 python backend/scripts/train_models.py --contamination 0.03
 python backend/scripts/evaluate_models.py
 python backend/scripts/benchmark_inference.py --events 1000 --warmup 100
 ```
 
-The active artifact validates feature schema `2.0.0` and exact feature order before inference. Never load an untrusted joblib file.
+The active artifact validates feature schema `3.0.0` and exact feature order before inference. Never load an untrusted joblib file.
 
 ## Verify
 
@@ -176,9 +184,9 @@ npm run build
 
 ## Current honest evaluation
 
-The fresh seed-42 test split contains 11,070 events from 60 unseen entities with 2.44% attacks. The operational finding layer reaches 90.8% precision and 91.1% recall at a 0.23% normal-event false-positive rate. Normal-only behavioral evidence reaches 83.6% PR-AUC and 80.7% recall, while scenario and attacked-entity recall are both 100%. The separately frozen priority queue has 100% precision and 19.3% recall at a 0.47% event rate.
+The fresh seed-42 test split contains 11,010 events from 60 unseen entities with 1.91% attack events from scenarios injected at roughly 1% of sessions. The operational finding layer reaches 99.0% precision and 98.6% recall at a 0.02% normal-event false-positive rate. Normal-only behavioral evidence reaches 91.2% PR-AUC and 88.1% recall, while scenario and attacked-entity recall are both 100%. The separately frozen priority queue has 100% precision and 57.6% recall.
 
-Known-class Macro F1 is 64.3%: exact credential-misuse and impossible-travel classification remains weak even when the behavioral layer flags the scenario. This is an honest synthetic experiment, not a production guarantee. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, counts, every class, RF-versus-XGBoost selection, and limitations.
+Known-class Macro F1 is 99.8% on the controlled synthetic taxonomy. That high number is generator-dependent and is not a production guarantee; the normal-only and open-set measurements remain the primary evidence of behavioral detection. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, counts, every class, RF-versus-XGBoost selection, and limitations.
 
 ## Production boundaries
 

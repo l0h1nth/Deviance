@@ -16,14 +16,26 @@ class GRUSequenceDetector:
     """
 
     def __init__(self, input_size: int, hidden_size: int = 32, window_size: int = 12,
-                 ridge: float = 1e-3, error_top_k: int = 5, random_state: int = 42):
-        self.input_size, self.hidden_size, self.window_size = input_size, hidden_size, window_size
+                 ridge: float = 1e-3, error_top_k: int = 5, random_state: int = 42,
+                 feature_indices: list[int] | np.ndarray | None = None):
+        self.source_input_size = input_size
+        self.feature_indices = np.asarray(feature_indices if feature_indices is not None else np.arange(input_size), dtype=int)
+        self.input_size, self.hidden_size, self.window_size = len(self.feature_indices), hidden_size, window_size
         self.ridge, self.error_top_k, self.random_state = ridge, error_top_k, random_state
-        rng = np.random.default_rng(random_state); x_scale = 1 / np.sqrt(max(input_size, 1)); h_scale = 1 / np.sqrt(hidden_size)
-        self.wz = rng.normal(0, x_scale, (input_size, hidden_size)); self.uz = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.bz = np.zeros(hidden_size)
-        self.wr = rng.normal(0, x_scale, (input_size, hidden_size)); self.ur = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.br = np.zeros(hidden_size)
-        self.wh = rng.normal(0, x_scale, (input_size, hidden_size)); self.uh = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.bh = np.zeros(hidden_size)
-        self.decoder = np.zeros((hidden_size + 1, input_size)); self.error_low = 0.0; self.error_high = 1.0
+        rng = np.random.default_rng(random_state); x_scale = 1 / np.sqrt(max(self.input_size, 1)); h_scale = 1 / np.sqrt(hidden_size)
+        self.wz = rng.normal(0, x_scale, (self.input_size, hidden_size)); self.uz = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.bz = np.zeros(hidden_size)
+        self.wr = rng.normal(0, x_scale, (self.input_size, hidden_size)); self.ur = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.br = np.zeros(hidden_size)
+        self.wh = rng.normal(0, x_scale, (self.input_size, hidden_size)); self.uh = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.bh = np.zeros(hidden_size)
+        self.error_low = 0.0; self.error_high = 1.0
+        self.decoder = np.zeros((hidden_size + 1, self.input_size))
+
+    def _select(self, values: np.ndarray) -> np.ndarray:
+        array = np.asarray(values, dtype=float)
+        if array.shape[-1] == self.input_size and self.source_input_size != self.input_size:
+            return array
+        if array.shape[-1] != self.source_input_size:
+            raise ValueError(f"Sequence input width {array.shape[-1]} does not match {self.source_input_size}")
+        return array[..., self.feature_indices]
 
     def _encode(self, sequence: list[np.ndarray] | np.ndarray) -> np.ndarray:
         hidden = np.zeros(self.hidden_size)
@@ -44,6 +56,7 @@ class GRUSequenceDetector:
         return np.mean(np.partition(absolute, width - top_k, axis=-1)[..., -top_k:], axis=-1)
 
     def fit(self, scaled: np.ndarray, labels: np.ndarray, entities: np.ndarray):
+        scaled = self._select(scaled)
         histories: dict[str, deque] = defaultdict(lambda: deque(maxlen=self.window_size)); hidden_rows, targets = [], []
         for vector, label, entity in zip(scaled, labels, entities):
             if label == "normal":
@@ -66,10 +79,12 @@ class GRUSequenceDetector:
         # activated only after three preceding events are available for this entity.
         if len(previous_scaled) < 3:
             return 0.0
+        previous_scaled = self._select(previous_scaled); current_scaled = self._select(current_scaled)
         prediction = self._predict(previous_scaled)
         return float(self._normalize(np.asarray([self._error(prediction, current_scaled)]))[0])
 
     def score_stream(self, scaled: np.ndarray, entities: np.ndarray) -> np.ndarray:
+        scaled = self._select(scaled)
         histories: dict[str, deque] = defaultdict(lambda: deque(maxlen=self.window_size)); errors = []
         for vector, entity in zip(scaled, entities):
             history = histories[str(entity)]
@@ -81,5 +96,6 @@ class GRUSequenceDetector:
 
     def model_metadata(self) -> dict:
         return {"type": "GRUSequenceDetector", "hidden_size": self.hidden_size, "window_size": self.window_size,
-                "error_top_k": self.error_top_k,
+                "error_top_k": self.error_top_k, "source_input_size": self.source_input_size,
+                "input_size": self.input_size, "feature_indices": self.feature_indices.tolist(),
                 "training": "normal_sequences_only", "implementation": "gated_recurrent_reservoir_ridge_decoder"}

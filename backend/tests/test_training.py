@@ -23,7 +23,7 @@ def test_training_pipeline(tmp_path):
         (processed/f"{name}.jsonl").write_text("".join(json.dumps(row.event.model_dump(mode="json"))+"\n" for row in rows))
         (processed/f"{name}_labels.jsonl").write_text("".join(json.dumps(row.sidecar().model_dump(mode="json"))+"\n" for row in rows))
     bundle=train(tmp_path,models,seed=7)
-    assert (models/"current.joblib").exists() and bundle.feature_schema_version=="2.0.0"
+    assert (models/"current.joblib").exists() and bundle.feature_schema_version=="3.0.0"
     assert bundle.metrics["test"]["sample_count"]==len(splits["test"])
     x_train,y_train,_,_,_,_=featurize_splits(splits)["train"];normal_mask=y_train=="normal"
     np.testing.assert_allclose(bundle.scaler.center_,np.median(x_train[normal_mask],axis=0))

@@ -19,18 +19,28 @@ def baseline(**updates):
 def test_raw_event_validation():
     with pytest.raises(ValidationError): event(latitude=100)
     with pytest.raises(ValidationError): event(timestamp=event().timestamp.replace(tzinfo=None))
+    with pytest.raises(ValidationError): event(event_type="api_call")
+    with pytest.raises(ValidationError): event(event_type="device_connection")
+    api = event(event_type="api_call", action="invoke", access_outcome="allowed",
+                api_route="/api/v1/profile", http_method="GET", http_status_code=200,
+                api_latency_ms=42, credential_id_hash="credential-hash", token_scopes=["profile:read"])
+    assert api.api_route == "/api/v1/profile"
 
 
 def test_exact_feature_order_and_schema():
-    assert len(registry.names)==24
-    assert FeaturePipeline.names==["failed_login_count_1m","login_attempt_count_5m","login_hour_deviation","new_device_score",
-        "device_fingerprint_distance","location_novelty_score","required_travel_speed_kmph","unique_destination_hosts_5m",
-        "sensitive_resource_access_ratio","download_volume_zscore","session_duration_zscore","successful_login_after_failures_score",
-        "source_ip_unique_entities_5m","source_ip_failure_ratio_5m","auth_method_novelty_score",
-        "time_since_previous_event_log_seconds","concurrent_session_count_5m","command_sequence_novelty_score",
-        "resource_novelty_score","privilege_expansion_score","protocol_port_novelty_score","upload_volume_zscore",
-        "sensitive_download_count_30d","off_hours_activity_score"]
-    assert FEATURE_SCHEMA_VERSION=="2.0.0"
+    assert len(registry.names)==32
+    assert FeaturePipeline.names==["failed_auth_count_1m","auth_attempt_count_5m","successful_auth_after_failures_score",
+        "source_ip_unique_entities_5m","source_ip_failure_ratio_5m","auth_method_novelty_score","api_call_rate_1m_zscore",
+        "api_error_ratio_5m","api_endpoint_method_novelty_score","source_ip_novelty_score","new_device_score",
+        "device_fingerprint_distance","claimed_observed_device_mismatch_score","device_posture_novelty_score",
+        "location_novelty_score","vpn_aware_travel_anomaly_score","access_hour_deviation_score",
+        "unique_destination_hosts_5m","resource_novelty_score","event_action_novelty_score",
+        "resource_access_entropy_24h","resource_sensitivity_deviation_score","privilege_expansion_score",
+        "protocol_port_novelty_score","command_transition_novelty_score","download_volume_zscore","upload_volume_zscore",
+        "cumulative_external_transfer_24h_zscore","session_duration_zscore","inter_event_time_zscore",
+        "active_concurrent_session_count","sensitive_access_rate_30d_zscore"]
+    assert FEATURE_SCHEMA_VERSION=="3.0.0"
+    assert len(FeaturePipeline.sequence_feature_indices)==16
 
 
 def test_haversine_and_impossible_travel():
@@ -38,14 +48,22 @@ def test_haversine_and_impossible_travel():
     first=event(timestamp=event().timestamp-timedelta(minutes=30),latitude=51.5074,longitude=-.1278)
     current=event(event_id="second",latitude=40.7128,longitude=-74.006)
     vector,_=FeaturePipeline().transform_one(current,[first],baseline())
-    assert vector[6]>10_000
+    assert vector[FeaturePipeline.names.index("vpn_aware_travel_anomaly_score")]>.9
 
 
 def test_device_features_and_rolling_windows():
     now=event(); history=[event(event_id=f"f{i}",timestamp=now.timestamp-timedelta(seconds=10+i),authentication_result="failure") for i in range(4)]
     vector,_=FeaturePipeline().transform_one(now,history,baseline(devices=["trusted"],fingerprints=["zzzzzz123456"]))
-    assert vector[0]==4 and vector[1]==4 and vector[3]==1 and vector[4]>0
+    assert vector[0]==4 and vector[1]==5
+    assert vector[FeaturePipeline.names.index("new_device_score")]==1
+    assert vector[FeaturePipeline.names.index("device_fingerprint_distance")]>0
     assert fingerprint_distance("abc",["abc"])==0
+
+
+def test_claimed_device_mismatch_is_explicit_evidence():
+    current = event(device_id="observed-device", claimed_device_id="claimed-device")
+    vector,_ = FeaturePipeline().transform_one(current, [], baseline(devices=["observed-device"]))
+    assert vector[FeaturePipeline.names.index("claimed_observed_device_mismatch_score")] == 1
 
 
 def test_cold_start_fallback():

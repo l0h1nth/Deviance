@@ -43,7 +43,7 @@ def namespace_rows(rows: list[LabeledEvent], split: str) -> list[LabeledEvent]:
 
 
 def generate(seed: int = 42, users_count: int = 400, events_per_user: int = 180,
-             scenarios_per_type: int | None = None, attack_rate: float = .025) -> dict:
+             scenarios_per_type: int | None = None, attack_rate: float = .01) -> dict:
     if not .005 <= attack_rate <= .03:
         raise ValueError("attack_rate must be between 0.005 and 0.03")
     settings = get_settings(); rng = np.random.default_rng(seed)
@@ -71,18 +71,24 @@ def generate(seed: int = 42, users_count: int = 400, events_per_user: int = 180,
     write_split(settings.data_dir / "raw", "all_events", all_rows)
     summary = {
         name: {"events": len(rows), "attacks": sum(row.label != "normal" for row in rows),
-               "attack_rate": round(sum(row.label != "normal" for row in rows) / max(len(rows), 1), 4),
+               "attack_event_rate": round(sum(row.label != "normal" for row in rows) / max(len(rows), 1), 4),
+               "normal_sessions": len({row.event.session_id for row in rows if row.label == "normal"}),
+               "attack_scenarios": len({row.scenario_id for row in rows if row.label != "normal"}),
+               "attack_scenario_rate": round(
+                   len({row.scenario_id for row in rows if row.label != "normal"}) /
+                   max(len({row.event.session_id for row in rows if row.label == "normal"}), 1), 4),
                "entities": len(groups.get(name, [])),
                "labels": dict(sorted(Counter(row.label for row in rows).items()))}
         for name, rows in {**splits, "demo_stream": stream}.items()
     }
     group_ids = {name: {entity.entity_id for entity in group} for name, group in groups.items()}
     manifest = {
-        "schema": "deviance-synthetic-corpus-2",
+        "schema": "deviance-synthetic-corpus-3",
+        "feature_schema": "3.0.0",
         "seed": seed,
         "requested_entities": users_count,
         "normal_events_per_entity": events_per_user,
-        "requested_attack_event_rate": attack_rate,
+        "requested_attack_scenario_rate": attack_rate,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "splits": summary,
         "integrity": {
@@ -101,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--users", type=int, default=400)
     parser.add_argument("--events-per-user", type=int, default=180)
     parser.add_argument("--scenarios-per-type", type=int)
-    parser.add_argument("--attack-rate", type=float, default=.025)
+    parser.add_argument("--attack-rate", type=float, default=.01,
+                        help="Attack scenarios as a fraction of normal sessions (0.005-0.03)")
     args = parser.parse_args()
     print(json.dumps(generate(args.seed, args.users, args.events_per_user, args.scenarios_per_type, args.attack_rate), indent=2))

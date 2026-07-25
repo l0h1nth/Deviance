@@ -10,11 +10,11 @@ Every login, API call, resource access, command, and device connection creates a
 
 ## Slide 3 — Synthetic environment
 
-400 entities; 73,807 train/validation/test events; users, service accounts, and edge devices; varied offices, shifts, devices, auth methods, protocols, commands, resources, transfers, and benign look-alikes. Seven multi-event attack patterns are injected at about 2.5% prevalence. Labels are offline sidecars only.
+400 entities; 73,399 train/validation/test events; users, service accounts, and edge devices; varied offices, shifts, stable IPs, devices, API routes/tokens, auth methods, protocols, commands, resources, transfers, and benign look-alikes. Seven multi-event attack patterns are injected at about 1% of sessions. Labels are offline sidecars only.
 
 ## Slide 4 — The three-model ensemble
 
-A global Isolation Forest plus four signal-domain forests detect unusual 24-feature snapshots. A twelve-event GRU recurrence detects unexpected sequence behavior. Random Forest and XGBoost candidates compete on validation performance before probability calibration. High normal-only novelty with weak class evidence becomes unknown anomaly.
+A global Isolation Forest plus four signal-domain forests detect unusual 32-feature snapshots. A twelve-event GRU recurrence over 16 temporal signals detects unexpected sequence behavior. Random Forest and XGBoost candidates compete on validation performance before probability calibration. High normal-only novelty with weak class evidence becomes unknown anomaly.
 
 ## Slide 5 — No anomaly-label leakage
 
@@ -34,11 +34,11 @@ New entities use peer/global baselines with explicit low confidence, and sequenc
 
 ## Slide 9 — Honest results
 
-Entity-disjoint test: 11,070 events, 2.44% attacks. Operational precision 90.8%, recall 91.1%, and normal-event FPR 0.23%. Normal-only behavioral PR-AUC is 83.6% with 80.7% attack recall. Scenario and attacked-entity recall are 100%. Known-class Macro F1 is a more honest 64.3%; credential misuse and impossible travel remain weak exact labels. Synthetic results are not production guarantees.
+Entity-disjoint test: 11,010 events, 1.91% attack rows. Operational precision 99.0%, recall 98.6%, and normal-event FPR 0.02%. Normal-only behavioral PR-AUC is 91.2% with 88.1% attack recall. Scenario and attacked-entity recall are 100%. Known-class Macro F1 is 99.8% on the controlled taxonomy; synthetic results are not production guarantees.
 
 ## Slide 10 — Live demo
 
-Login with displayed admin credentials. Run mixed simulation. Show live event scoring and 24-feature evidence. Open the risk-ranked correlated incident. Record a disposition. Run cold-start or drift. Finish on model governance and leakage-control evidence.
+Login with displayed admin credentials. Run mixed simulation. Show live event scoring and 32-feature evidence. Open the risk-ranked correlated incident. Record a disposition. Run cold-start or drift. Finish on model governance and leakage-control evidence.
 
 ## Slide 11 — Scalability
 

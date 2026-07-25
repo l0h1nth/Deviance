@@ -20,6 +20,10 @@ class SyntheticEntity:
     shift_hour: int
     devices: list[dict]
     auth_methods: list[str]
+    source_ips: list[str]
+    api_routes: list[str]
+    credential_id_hash: str
+    token_scopes: list[str]
 
     @property
     def user_id(self) -> str:

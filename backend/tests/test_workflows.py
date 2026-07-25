@@ -24,7 +24,7 @@ def test_simulation_start_stop_model_status_and_notifications():
         assert stopped.status_code == 200 and stopped.json()["status"] in {"stopped", "completed"}
         status = client.get("/api/models/status", headers=headers).json()
         assert status["model_ready"] and status["artifact_status"] == "loaded"
-        assert status["feature_schema_version"] == "2.0.0" and "average_inference_latency_ms" in status
+        assert status["feature_schema_version"] == "3.0.0" and "average_inference_latency_ms" in status
         notifications = client.get("/api/notifications", headers=headers).json()["notifications"]
         assert any(item["type"] == "simulation_status" for item in notifications)
 
@@ -66,7 +66,7 @@ def test_metrics_consistency_enriched_alert_and_feedback():
         assert metrics["unresolved_alerts"] == sum(row["status"] in {"open", "investigating", "confirmed_threat"} for row in alerts)
         assert sum(metrics["attacks_by_type"].values()) == metrics["total_alerts"]
         detail = client.get(f"/api/alerts/{latest['alert_id']}", headers=headers).json()
-        assert len(detail["feature_evidence"]) == 24 and detail["risk_composition"]
+        assert len(detail["feature_evidence"]) == 32 and detail["risk_composition"]
         assert "sequence_anomaly_score" in detail and "incident_event_count" in detail
         assert detail["risk_score"] != detail["classifier_confidence"] and "anomaly_score" in detail
         update = client.patch(f"/api/alerts/{latest['alert_id']}", headers=headers,

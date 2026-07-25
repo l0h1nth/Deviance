@@ -71,7 +71,7 @@ class PredictionService:
         contributions = explain_features(metadata["values"], inference["scaled_vector"], self.bundle.attack_classifier.feature_importances_)
         feature_evidence = [{
             "feature": definition.name, "value": float(metadata["values"][definition.name]),
-            "baseline": 1.0 if definition.name in {"unique_destination_hosts_5m", "source_ip_unique_entities_5m", "concurrent_session_count_5m"} else 0.0,
+            "baseline": 1.0 if definition.name in {"unique_destination_hosts_5m", "source_ip_unique_entities_5m", "active_concurrent_session_count"} else 0.0,
             "deviation": float(abs(inference["scaled_vector"][index])), "description": definition.description,
         } for index, definition in enumerate(registry.definitions)]
         cold_start = baseline.baseline_type != "entity"; predicted = inference["predicted_attack"]

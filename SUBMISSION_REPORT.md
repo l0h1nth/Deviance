@@ -8,7 +8,7 @@ Traditional signatures recognize known bad artifacts. Deviance instead learns ha
 
 | Required deliverable | Deviance implementation |
 |---|---|
-| Synthetic generator | 400 mixed entity types, 24 derived dimensions, benign hard negatives, seven randomized attacks at ~2.5% |
+| Synthetic generator | 400 mixed entity types, 32 derived dimensions, API-aware benign hard negatives, seven randomized attacks at ~1% of sessions |
 | Normal baseline | Entity/device/peer/global profiles; normal-only robust scaler and global plus four domain Isolation Forests |
 | Sequence detection | Normal-only twelve-event GRU reconstruction detector using sparse residuals |
 | Attack classification | Validation selection between balanced Random Forest and regularized XGBoost, followed by sigmoid calibration and unknown abstention |
@@ -21,21 +21,21 @@ Traditional signatures recognize known bad artifacts. Deviance instead learns ha
 
 ## Evaluation against judging criteria
 
-Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. The operational layer reaches 90.8% precision, 91.1% recall, 0.23% normal-event FPR, and 100% attack-scenario recall. Known-class Macro F1 is 64.3%, exposing weak exact labels rather than hiding them behind weighted accuracy.
+Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. The operational layer reaches 99.0% precision, 98.6% recall, 0.02% normal-event FPR, and 100% attack-scenario recall. Known-class Macro F1 is 99.8% on the controlled synthetic taxonomy; this is not treated as real-world validation.
 
-Class imbalance is realistic at 2.44% test attacks. The normal-only behavioral layer reaches 83.6% PR-AUC and 80.7% recall. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent validation threshold creates the priority queue.
+Attack scenarios are injected at 1% of normal sessions, producing 1.91% attack event rows. The normal-only behavioral layer reaches 91.2% PR-AUC and 88.1% recall. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent validation threshold creates the priority queue.
 
-Classification covers all requested patterns plus credential stuffing and low-and-slow exfiltration. Random Forest beat XGBoost on a dedicated validation selection split. Credential misuse and impossible travel remain weak exact labels, even though their behavioral-only recall is 92.9% and 50.0%.
+Classification covers all requested patterns plus credential stuffing and low-and-slow exfiltration, including API-channel variants. XGBoost beat Random Forest on a dedicated validation selection split. Balanced probability calibration prevents rare classes from being collapsed into normal.
 
-Explainability connects raw event fields to 24 engineered signals, two anomaly scores, class probabilities, final risk components, and analyst guidance. It avoids claiming causal SHAP explanations; these are transparent feature deviations and weighted evidence.
+Explainability connects raw event fields to 32 engineered signals, two anomaly scores, class probabilities, final risk components, and analyst guidance. It avoids claiming causal SHAP explanations; these are transparent feature deviations and weighted evidence.
 
 Cold start and drift are observable states rather than hidden special cases. Trusted-only adaptation prevents detected attacks from immediately poisoning the baseline.
 
-System design is runnable on a laptop and has clear production seams. The repeatable 1,000-event local benchmark measures 106.9 ms median model inference and 116.4 ms P95 for sequential per-event scoring through all five anomaly forests.
+System design is runnable on a laptop and has clear production seams. The repeatable benchmark measures sequential per-event scoring through all five anomaly forests, temporal reconstruction, classifier, risk, and explanation layers.
 
 ## Demo narrative
 
-Start with the empty dashboard to establish a clean SOC shift. Run a mixed simulation and open Live Activity. Select an event to show the Isolation Forest, GRU sequence score, classifier distribution, and 24 evidence rows. Open the risk-ranked incident, walk through its correlated timeline and raw telemetry, then record an analyst disposition. Finally run a concept-drift or cold-start scenario and open Model Performance to show the honest holdout metrics and leakage controls.
+Start with the empty dashboard to establish a clean SOC shift. Run a mixed simulation and open Live Activity. Select an event to show the Isolation Forest, GRU sequence score, classifier distribution, and 32 evidence rows. Open the risk-ranked incident, walk through its correlated timeline and raw telemetry, then record an analyst disposition. Finally run a concept-drift or cold-start scenario and open Model Performance to show the holdout metrics and leakage controls.
 
 ## Assumptions and limitations
 
@@ -44,7 +44,7 @@ All efficacy measurements are synthetic. The GRU is a lightweight recurrent rese
 ## Reproducibility
 
 ```bash
-python backend/scripts/generate_data.py --seed 42 --users 400 --events-per-user 180 --attack-rate 0.025
+python backend/scripts/generate_data.py --seed 42 --users 400 --events-per-user 180 --attack-rate 0.01
 python backend/scripts/train_models.py --contamination 0.03
 python backend/scripts/evaluate_models.py
 python backend/scripts/benchmark_inference.py --events 1000 --warmup 100

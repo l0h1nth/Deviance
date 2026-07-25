@@ -8,44 +8,50 @@ The core trust boundary is strict: an `AccessEvent` accepted by the live API has
 
 ## Data and leakage controls
 
-The generator creates habitual per-entity behavior with varied shifts, offices, devices, authentication methods, resources, OS/firmware, network protocols, commands, uploads, downloads, and benign look-alikes. It then injects randomized multi-event attack scenarios at 0.5–3% prevalence.
+The generator creates habitual per-entity behavior with varied shifts, offices, stable IP pools, devices, API routes/tokens/scopes, authentication methods, resources, OS/firmware, network protocols, commands, transfers, and benign look-alikes. It then injects randomized multi-event attack scenarios at 0.5–3% of normal sessions (1% by default) and records event prevalence separately.
 
 The default corpus uses an entity-safe 70/15/15 train/validation/test split. No entity appears in more than one split. Within each split events are chronological. The scaler, profiles, Isolation Forest, and GRU detector fit only normal training rows. The classifier alone uses attack labels. Validation data calibrates class probabilities and fixes the analyst-budget threshold; the test split is evaluation only.
 
 ## Event contract
 
-The v2 schema includes entity ID/type, compatibility user ID, role/department, timestamp, source IP and geography, resource and destination, authentication method/result, session duration, command sequence, device fingerprint/MAC hash, OS/firmware/browser, protocol/port, transfer volumes, VPN state, and privileged-action state.
+The v3 schema includes the v2 identity, device, location, resource, network, command, transfer, and session fields plus action/outcome, MFA result, API route/method/status/latency, hashed credential/scopes, source/destination zones, external-destination state, parent authentication correlation, connection action, and device class.
 
 Entity types are `user`, `service_account`, and `edge_device`. Attack sidecar classes are brute force, credential misuse, credential stuffing, lateral movement, impossible travel, device spoofing, and low-and-slow exfiltration.
 
-## Twenty-four behavioral features
+## Thirty-two behavioral features
 
-Short-window features:
-
-1. Failed logins in one minute
-2. Login attempts in five minutes
-3. Login-hour deviation
-4. New-device score
-5. Device-fingerprint distance
-6. Location novelty
-7. Required travel speed
-8. Unique destination hosts in five minutes
-9. Sensitive-resource access ratio
-10. Download-volume z-score
-11. Session-duration z-score
-12. Successful login after failures
-13. Unique entities per source IP in five minutes
-14. Source-IP failure ratio in five minutes
-15. Authentication-method novelty
-16. Log time since the previous entity event
-17. Concurrent sessions in five minutes
-18. Command-sequence novelty
+1. Failed authentications in one minute
+2. Authentication attempts in five minutes
+3. Successful authentication after failures
+4. Unique entities per source IP in five minutes
+5. Source-IP failure ratio in five minutes
+6. Authentication-method novelty
+7. API call-rate deviation in one minute
+8. API error ratio in five minutes
+9. API endpoint/method novelty
+10. Source-IP novelty
+11. New-device score
+12. Device-fingerprint distance
+13. Claimed/observed device mismatch
+14. Device-posture novelty
+15. Location novelty
+16. VPN-aware travel anomaly
+17. Access-hour deviation
+18. Unique destination hosts in five minutes
 19. Resource novelty
-20. Privilege expansion
-21. Protocol/port novelty
-22. Upload-volume z-score
-23. Sensitive downloads in 30 days
-24. Off-hours activity
+20. Event/action novelty
+21. Resource-access entropy over 24 hours
+22. Resource-sensitivity deviation
+23. Privilege expansion
+24. Protocol/port novelty
+25. Ordered command-transition novelty
+26. Download-volume z-score
+27. Upload-volume z-score
+28. Cumulative external-transfer deviation over 24 hours
+29. Session-duration z-score
+30. Inter-event-time z-score
+31. Active overlapping-session count
+32. Sensitive-access-rate deviation over 30 days
 
 The same registry and order are used for training and live inference; schema mismatch returns an explicit conflict rather than silently scoring incorrect vectors.
 
@@ -59,9 +65,9 @@ Only normal training rows and trusted runtime outcomes update habitual profiles.
 
 One global Isolation Forest and four domain forests are fitted on scaled normal rows only. The domains isolate authentication, identity/device/geography, resource/network, and volume/timing signals. Their maximum and mean scores are blended with the global score so a sparse attack is not diluted by unrelated normal features.
 
-The sequence detector implements GRU reset/update recurrence in a deterministic NumPy recurrent reservoir. A ridge decoder learns to predict the next normal feature vector from up to twelve prior entity events. The five strongest reconstruction residuals form the error, which is normalized from normal-only training errors. This provides genuine gated recurrence without adding a heavyweight deep-learning runtime to the hackathon bundle.
+The sequence detector implements GRU reset/update recurrence in a deterministic NumPy recurrent reservoir. It receives a curated 16-signal temporal subset rather than every tabular feature. A ridge decoder learns to predict the next normal temporal vector from up to twelve prior entity events. The five strongest reconstruction residuals form the error, normalized from normal-only training errors.
 
-A balanced 320-tree Random Forest and a regularized XGBoost candidate are trained on normal plus all known attacks. A dedicated validation partition selects the candidate with the strongest Macro F1, using malicious PR-AUC as a tie-break. A different validation partition fits per-class one-vs-rest sigmoid calibrators. If normal-only behavioral evidence is high but no malicious class reaches defensible confidence, the result is `unknown_anomaly`.
+A balanced 320-tree Random Forest and a regularized XGBoost candidate are trained on normal plus all known attacks. A dedicated validation partition selects the candidate with the strongest Macro F1, using malicious PR-AUC as a tie-break. A different validation partition fits class-balanced one-vs-rest sigmoid calibrators so rare attack probabilities are not erased by normal-class prevalence. If normal-only behavioral evidence is high but no malicious class reaches defensible confidence, the result is `unknown_anomaly`.
 
 ## Risk and explainability
 
@@ -84,7 +90,7 @@ Each result includes the observed feature, expected baseline, normalized deviati
 1. A signed administrator token authenticates ingestion.
 2. Pydantic rejects unknown fields, invalid ranges, naive timestamps, and excessively future timestamps.
 3. The service checks event-id idempotency and loads recent entity/IP history.
-4. It selects an entity/device/peer/global baseline and extracts 24 features.
+4. It selects an entity/device/peer/global baseline and extracts 32 schema-3 features.
 5. The active bundle applies the scaler, five normal-only Isolation Forests, GRU, and the validation-selected calibrated classifier.
 6. The risk service composes score, severity, evidence, rationale, and response actions.
 7. Event and prediction records are persisted.
@@ -93,7 +99,7 @@ Each result includes the observed feature, expected baseline, normalized deviati
 
 ## Persistence
 
-SQLite tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, drift events, and model-run history. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty v2 database.
+SQLite tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, drift events, and model-run history. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty schema-3-compatible database.
 
 ## Drift
 

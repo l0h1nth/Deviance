@@ -2,7 +2,7 @@ flowchart LR
   subgraph Offline[Offline generation and training]
     GEN[Entity behavioral generator] --> EVENTS[(Unlabeled event JSONL)]
     GEN --> LABELS[(Ground-truth sidecars)]
-    EVENTS --> FE[24-feature pipeline]
+    EVENTS --> FE[32-feature pipeline]
     LABELS --> JOIN[Offline label join]
     FE --> NORMAL[Normal-only rows]
     NORMAL --> SCALE[Robust scaler]
@@ -18,7 +18,7 @@ flowchart LR
   subgraph Runtime[Near-real-time scoring]
     SOURCE[Auth / API / device telemetry] --> VALIDATE[Pydantic validation]
     VALIDATE --> PROFILE[Entity → device → peer → global baseline]
-    PROFILE --> LIVEFE[Same 24-feature pipeline]
+    PROFILE --> LIVEFE[Same 32-feature pipeline]
     BUNDLE --> LIVEFE
     LIVEFE --> SCORE[Domain IF ensemble + GRU + selected calibrated classifier]
     SCORE --> RISK[Weighted risk + explanations]

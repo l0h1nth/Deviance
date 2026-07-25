@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title="Deviance API", version="2.0.0", lifespan=lifespan,
+app = FastAPI(title="Deviance API", version="3.0.0", lifespan=lifespan,
               description="ML-first behavioral anomaly detection for access telemetry")
 app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_origins, allow_credentials=False,
                    allow_methods=["GET", "POST", "PATCH", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])

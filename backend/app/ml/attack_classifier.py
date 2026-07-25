@@ -38,7 +38,10 @@ class AttackClassifier:
         for index, class_name in enumerate(self.classes_):
             target = (labels == class_name).astype(int)
             if len(np.unique(target)) < 2: self.calibrators.append(None)
-            else: self.calibrators.append(LogisticRegression(random_state=42).fit(raw[:, [index]], target))
+            else:
+                self.calibrators.append(LogisticRegression(
+                    random_state=42, class_weight="balanced", max_iter=500,
+                ).fit(raw[:, [index]], target))
         return self
 
     def probabilities(self, features: np.ndarray) -> np.ndarray:

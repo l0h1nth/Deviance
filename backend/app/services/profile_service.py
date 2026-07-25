@@ -25,8 +25,77 @@ class Baseline:
 EMPTY_PROFILE = {
     "login_hours": [], "devices": [], "fingerprints": [], "locations": [], "downloads": [], "uploads": [],
     "session_durations": [], "resources": [], "privileged_resources": [], "auth_methods": [], "commands": [],
-    "protocol_ports": [],
+    "protocol_ports": [], "activity_hours": [], "source_ips": [], "device_postures": [], "vpn_usage": [],
+    "event_actions": [], "api_endpoint_methods": [], "api_credentials": [], "api_scopes": [],
+    "resource_sensitivities": [], "external_transfers": [], "sensitive_flags": [], "command_transitions": [],
+    "event_epochs": [], "inter_event_seconds": [], "api_events": [], "resource_events": [],
+    "sensitive_events": [], "external_transfer_events": [],
 }
+
+
+def empty_profile_data() -> dict[str, list]:
+    return {key: [] for key in EMPTY_PROFILE}
+
+
+def update_profile_data(source: dict | None, event: AccessEvent) -> dict[str, list]:
+    """Apply one trusted event to the bounded behavioral profile contract."""
+    data = {key: list((source or {}).get(key, [])) for key in EMPTY_PROFILE}
+
+    def append(key: str, value, limit: int = 500) -> None:
+        data[key] = (data[key] + [value])[-limit:]
+
+    def unique(key: str, value, limit: int) -> None:
+        data[key] = list(dict.fromkeys(data[key] + [value]))[-limit:]
+
+    hour = event.timestamp.hour + event.timestamp.minute / 60
+    append("activity_hours", hour)
+    unique("source_ips", event.source_ip, 100)
+    unique("devices", event.device_id, 50)
+    unique("fingerprints", event.device_fingerprint, 50)
+    unique("locations", f"{event.country}|{event.city}", 50)
+    unique("device_postures", f"{event.operating_system}|{event.firmware_version}|{event.browser}|{event.device_mac_hash}", 80)
+    append("vpn_usage", float(event.is_vpn))
+    unique("event_actions", f"{event.event_type}:{event.action}", 100)
+    append("resource_sensitivities", float(event.resource_sensitivity))
+    sensitive = float(event.resource_sensitivity >= .7 or event.is_privileged_action)
+    append("sensitive_flags", sensitive)
+    append("downloads", event.bytes_downloaded)
+    append("uploads", event.bytes_uploaded)
+    append("session_durations", event.session_duration_seconds)
+    unique("resources", event.resource_id, 150)
+    unique("protocol_ports", f"{event.network_protocol}:{event.destination_port}", 50)
+    epoch = event.timestamp.timestamp()
+    append("resource_events", [epoch, event.resource_id], 1000)
+    append("sensitive_events", [epoch, sensitive], 1000)
+    if event.is_external_destination:
+        transfer = event.bytes_uploaded + event.bytes_downloaded
+        append("external_transfers", transfer)
+        append("external_transfer_events", [epoch, transfer], 1000)
+    if event.is_privileged_action:
+        unique("privileged_resources", event.resource_id, 100)
+    if event.authentication_result == "success":
+        append("login_hours", hour)
+    if event.auth_method != "not_applicable":
+        unique("auth_methods", event.auth_method, 10)
+    if event.command_sequence:
+        for command in event.command_sequence:
+            unique("commands", command, 200)
+        ordered = ["__start__", *event.command_sequence]
+        for left, right in zip(ordered, ordered[1:]):
+            unique("command_transitions", f"{left}->{right}", 300)
+    if event.event_type == "api_call":
+        endpoint = f"{event.http_method}:{event.api_route}"
+        unique("api_endpoint_methods", endpoint, 150)
+        append("api_events", [epoch, endpoint], 1000)
+        if event.credential_id_hash:
+            unique("api_credentials", event.credential_id_hash, 50)
+        for scope in event.token_scopes:
+            unique("api_scopes", scope, 100)
+
+    if data["event_epochs"]:
+        append("inter_event_seconds", max(0.0, epoch - float(data["event_epochs"][-1])))
+    append("event_epochs", epoch)
+    return data
 
 
 class ProfileService:
@@ -59,8 +128,8 @@ class ProfileService:
                 prior = self.bootstrap_profiles.get("global:organization"); prior_kind = "global_prior"
             if prior:
                 return Baseline(prior_kind, int(prior.get("count", 0)), .55, 0,
-                                datetime.now(timezone.utc).isoformat(), prior.get("data", dict(EMPTY_PROFILE)))
-            return Baseline("global_default", 0, .1, 0, datetime.now(timezone.utc).isoformat(), dict(EMPTY_PROFILE))
+                                datetime.now(timezone.utc).isoformat(), prior.get("data", empty_profile_data()))
+            return Baseline("global_default", 0, .1, 0, datetime.now(timezone.utc).isoformat(), empty_profile_data())
         confidence = min(1.0, .25 + .75 * chosen.event_count / max(needed * 2, 1))
         return Baseline(kind, chosen.event_count, confidence, chosen.version, chosen.updated_at.isoformat(), chosen.profile_data)
 
@@ -71,25 +140,9 @@ class ProfileService:
             record = self._record(profile_type, subject)
             if not record:
                 record = ProfileRecord(profile_key=self._key(profile_type, subject), profile_type=profile_type,
-                                       subject_id=subject, event_count=0, profile_data=dict(EMPTY_PROFILE), version=1)
+                                       subject_id=subject, event_count=0, profile_data=empty_profile_data(), version=1)
                 self.db.add(record)
-            source = record.profile_data or EMPTY_PROFILE
-            data = {key: list(source.get(key, [])) for key in EMPTY_PROFILE}
-            if event.authentication_result == "success":
-                data["login_hours"] = (data["login_hours"] + [event.timestamp.hour + event.timestamp.minute / 60])[-500:]
-                data["devices"] = list(dict.fromkeys(data["devices"] + [event.device_id]))[-50:]
-                data["fingerprints"] = list(dict.fromkeys(data["fingerprints"] + [event.device_fingerprint]))[-50:]
-                data["locations"] = list(dict.fromkeys(data["locations"] + [f"{event.country}|{event.city}"]))[-50:]
-                if event.auth_method != "not_applicable": data["auth_methods"] = list(dict.fromkeys(data["auth_methods"] + [event.auth_method]))[-10:]
-            data["downloads"] = (data["downloads"] + [event.bytes_downloaded])[-500:]
-            data["uploads"] = (data["uploads"] + [event.bytes_uploaded])[-500:]
-            data["session_durations"] = (data["session_durations"] + [event.session_duration_seconds])[-500:]
-            data["resources"] = list(dict.fromkeys(data["resources"] + [event.resource_id]))[-150:]
-            if event.is_privileged_action:
-                data["privileged_resources"] = list(dict.fromkeys(data["privileged_resources"] + [event.resource_id]))[-100:]
-            data["commands"] = list(dict.fromkeys(data["commands"] + event.command_sequence))[-200:]
-            protocol_port = f"{event.network_protocol}:{event.destination_port}"
-            data["protocol_ports"] = list(dict.fromkeys(data["protocol_ports"] + [protocol_port]))[-50:]
+            data = update_profile_data(record.profile_data, event)
             record.profile_data, record.event_count, record.version = data, record.event_count + 1, record.version + 1
 
     @staticmethod
