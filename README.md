@@ -90,7 +90,7 @@ Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` before any non-demo
 7. Mark it investigating, confirmed threat, false positive, or closed; the disposition is persisted in its audit history.
 8. Run `concept_drift`, `insider_drift`, or `cold_start` to demonstrate the non-attack edge cases required by the brief.
 
-Available scenarios are `mixed`, `brute_force`, `credential_stuffing`, `lateral_movement`, `impossible_travel`, `device_spoofing`, `low_slow_exfiltration`, `cold_start`, `concept_drift`, and `insider_drift`.
+Available scenarios are `mixed`, `brute_force`, `credential_stuffing`, `lateral_movement`, `impossible_travel`, `device_spoofing`, `low_slow_exfiltration`, `cold_start_benign`, `cold_start_attack`, `concept_drift`, and `insider_drift`. The API retains `cold_start` as a backward-compatible alias for the benign scenario.
 
 ## Test live counters and drift monitoring
 

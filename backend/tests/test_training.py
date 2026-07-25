@@ -25,12 +25,13 @@ def test_training_pipeline(tmp_path):
     bundle=train(tmp_path,models,seed=7)
     assert (models/"current.joblib").exists() and bundle.feature_schema_version=="3.0.0"
     assert bundle.metrics["test"]["sample_count"]==len(splits["test"])
-    x_train,y_train,_,_,_,_=featurize_splits(splits)["train"];normal_mask=y_train=="normal"
+    x_train,y_train,_,_,_,_,_,_=featurize_splits(splits)["train"];normal_mask=y_train=="normal"
     np.testing.assert_allclose(bundle.scaler.center_,np.median(x_train[normal_mask],axis=0))
     population=bundle.metrics["training_population"]
     assert population["normal_rows"]==int(normal_mask.sum())
     assert population["preprocessor_fit"]=="normal_only"
     assert population["sequence_detector_fit"]=="normal_sequences_only"
+    assert population["classifier_cold_start_attack_augmentation_rows"] > 0
     assert "0.10% normal-event FPR" in bundle.metrics["threshold_selection"]["selection_method"]
     assert bundle.attack_classifier.model_kind in {"random_forest", "xgboost"}
     assert bundle.anomaly_detector.model_metadata()["type"] == "DomainIsolationForestEnsemble"
@@ -38,6 +39,15 @@ def test_training_pipeline(tmp_path):
     assert 0 <= test_metrics["classifier_accuracy"] <= 1
     assert "open_set_macro_f1" not in test_metrics
     assert "insider_drift_false_positive_rate" in test_metrics
+    cold_start = test_metrics["cold_start_evaluation"]
+    assert cold_start["maturity_threshold"] == 12
+    assert set(cold_start["by_history_bucket"]) == {"0", "1-2", "3-11", "12+"}
+    assert cold_start["overall"]["sample_count"] > 0
+    assert 0 <= cold_start["overall"]["benign_false_positive_rate"] <= 1
+    challenge = cold_start["attack_challenge"]
+    assert challenge["event_count"] > 0 and challenge["scenario_count"] > 0
+    assert set(challenge["by_attack_class"]) == set(ATTACK_TYPES)
+    assert all(result["scenario_support"] > 0 for result in challenge["by_attack_class"].values())
     assert set(bundle.attack_classifier.classes_) == {"normal", *ATTACK_TYPES}
 
 

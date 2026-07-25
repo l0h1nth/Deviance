@@ -22,6 +22,14 @@ from app.schemas.events import AccessEvent, LabeledEvent, TrainingLabel
 from app.services.profile_service import Baseline, EMPTY_PROFILE, empty_profile_data, update_profile_data
 
 
+COLD_START_BUCKETS = (
+    ("0", 0, 1),
+    ("1-2", 1, 3),
+    ("3-11", 3, 12),
+    ("12+", 12, None),
+)
+
+
 class MemoryProfiles:
     """Leakage-safe normal-only profiles used while walking events chronologically."""
     def __init__(self, entity_min: int = 12, peer_min: int = 25):
@@ -34,10 +42,16 @@ class MemoryProfiles:
         if kind == "peer": return f"peer:{event.entity_type}:{event.department}:{event.user_role}"
         return "global:organization"
 
+    def subject_history_count(self, event: AccessEvent) -> int:
+        """History available to the subject-specific baseline before this event."""
+        entity = int(self.profiles[self._key("entity", event)].get("count", 0))
+        device = int(self.profiles[self._key("device", event)].get("count", 0))
+        return max(entity, device)
+
     def baseline(self, event: AccessEvent) -> Baseline:
         entity, device, peer, glob = (self.profiles[self._key(kind, event)] for kind in ("entity", "device", "peer", "global"))
         if entity["count"] >= self.entity_min: data, kind, minimum = entity, "entity", self.entity_min
-        elif event.entity_type == "edge_device" and device["count"] >= self.entity_min: data, kind, minimum = device, "device", self.entity_min
+        elif device["count"] >= self.entity_min: data, kind, minimum = device, "device", self.entity_min
         elif peer["count"] >= self.peer_min: data, kind, minimum = peer, "peer", self.peer_min
         else: data, kind, minimum = glob, "global" if glob["count"] else "global_default", self.peer_min
         clean = {key: value for key, value in data.items() if key != "count"}
@@ -78,17 +92,21 @@ def featurize_splits(splits: dict[str, list[LabeledEvent]]) -> dict[str, tuple[n
         profiles = training_profiles if split_name == "train" else deepcopy(training_profiles)
         history = []
         vectors, labels, entities, sequences, scenarios, criticalities = [], [], [], [], [], []
+        subject_history_counts, baseline_types = [], []
         for row in sorted(splits[split_name], key=lambda item: item.event.timestamp):
-            event = row.event; vector, _ = pipeline.transform_one(event, history, profiles.baseline(event))
+            event = row.event; baseline = profiles.baseline(event)
+            vector, _ = pipeline.transform_one(event, history, baseline)
             vectors.append(vector); labels.append(row.label); entities.append(event.entity_id)
             sequences.append(row.sequence_id); scenarios.append(row.scenario_id)
             criticalities.append(float(np.clip(.75 * event.resource_sensitivity + .25 * event.is_privileged_action, 0, 1)))
+            subject_history_counts.append(profiles.subject_history_count(event)); baseline_types.append(baseline.baseline_type)
             profiles.update(event, trusted=(row.label == "normal") if split_name == "train" else True)
             history.append(event)
             if len(history) > 3000: history = history[-3000:]
         result[split_name] = (
             np.asarray(vectors), np.asarray(labels), np.asarray(entities), np.asarray(sequences),
-            np.asarray(scenarios), np.asarray(criticalities),
+            np.asarray(scenarios), np.asarray(criticalities), np.asarray(subject_history_counts),
+            np.asarray(baseline_types),
         )
     return result
 
@@ -138,8 +156,116 @@ def grouped_recall(alerted: np.ndarray, y: np.ndarray, groups: np.ndarray) -> di
             "recall": len(found_groups) / max(len(true_groups), 1), "recall_by_class": by_class}
 
 
+def cold_start_metrics(alerted: np.ndarray, behavior_flagged: np.ndarray, classifier_predicted: np.ndarray,
+                       labels: np.ndarray, history_counts: np.ndarray, baseline_types: np.ndarray,
+                       maturity_threshold: int = 12) -> dict:
+    """Evaluate benign safety and attack coverage before a subject profile matures."""
+    history_counts = np.asarray(history_counts, dtype=int); labels = np.asarray(labels)
+
+    def summarize(mask: np.ndarray) -> dict:
+        sample_count = int(np.sum(mask)); normal = mask & (labels == "normal"); attacks = mask & (labels != "normal")
+        normal_count, attack_count = int(np.sum(normal)), int(np.sum(attacks))
+        tp, fp = int(np.sum(attacks & alerted)), int(np.sum(normal & alerted))
+        class_recall = {}
+        for label in sorted(set(labels) - {"normal"}):
+            class_mask = mask & (labels == label); support = int(np.sum(class_mask))
+            class_recall[str(label)] = {
+                "support": support,
+                "recall": float(np.sum(class_mask & alerted) / support) if support else None,
+            }
+        return {
+            "sample_count": sample_count, "normal_count": normal_count, "attack_count": attack_count,
+            "benign_false_positive_rate": fp / max(normal_count, 1),
+            "attack_recall": tp / max(attack_count, 1),
+            "finding_precision": tp / max(tp + fp, 1),
+            "classifier_accuracy": float(np.mean(classifier_predicted[mask] == labels[mask])) if sample_count else 0.0,
+            "behavioral_attack_recall": float(np.sum(attacks & behavior_flagged) / max(attack_count, 1)),
+            "attack_recall_by_class": class_recall,
+        }
+
+    cold_mask = history_counts < maturity_threshold
+    buckets = {}
+    for name, lower, upper in COLD_START_BUCKETS:
+        mask = history_counts >= lower
+        if upper is not None: mask &= history_counts < upper
+        buckets[name] = summarize(mask)
+    baseline_usage = {
+        str(name): int(np.sum(cold_mask & (baseline_types == name))) for name in sorted(set(baseline_types[cold_mask]))
+    }
+    return {
+        "definition": f"fewer than {maturity_threshold} prior subject-profile events",
+        "maturity_threshold": maturity_threshold,
+        "profile_update_policy": "chronological label-blind holdout updates; production uses trusted low-risk events",
+        "overall": summarize(cold_mask), "by_history_bucket": buckets,
+        "baseline_usage": baseline_usage,
+    }
+
+
+def cold_start_attack_vectors(rows: list[LabeledEvent], bootstrap_profiles: dict) -> tuple[np.ndarray, ...]:
+    """Represent labeled attacks as unseen identities using only peer/global priors."""
+    profiles = MemoryProfiles(); pipeline = FeaturePipeline()
+    for key, prior in bootstrap_profiles.items():
+        data = {name: list(prior.get("data", {}).get(name, [])) for name in EMPTY_PROFILE}
+        data["count"] = int(prior.get("count", 0)); profiles.profiles[key] = data
+
+    grouped: dict[str, list[LabeledEvent]] = defaultdict(list)
+    for row in rows:
+        if row.label != "normal": grouped[row.scenario_id].append(row)
+    vectors, labels, entities, scenarios, criticalities, baseline_types = [], [], [], [], [], []
+    for scenario_id, scenario_rows in sorted(grouped.items()):
+        history: list[AccessEvent] = []; entity_ids: dict[str, str] = {}; device_ids: dict[str, str] = {}
+        for row in sorted(scenario_rows, key=lambda item: item.event.timestamp):
+            original = row.event
+            entity_id = entity_ids.setdefault(original.entity_id, f"cold-{scenario_id}-{len(entity_ids)}")
+            device_id = device_ids.setdefault(original.device_id, f"cold-{scenario_id}-device-{len(device_ids)}")
+            claimed_id = device_ids.setdefault(
+                original.claimed_device_id, f"cold-{scenario_id}-device-{len(device_ids)}")
+            event = original.model_copy(update={
+                "entity_id": entity_id, "user_id": entity_id,
+                "device_id": device_id, "claimed_device_id": claimed_id,
+                "device_fingerprint": f"cold-{scenario_id}-{original.device_fingerprint}",
+                "device_mac_hash": f"cold-{scenario_id}-{original.device_mac_hash}",
+            })
+            baseline = profiles.baseline(event); vector, _ = pipeline.transform_one(event, history, baseline)
+            vectors.append(vector); labels.append(row.label); entities.append(entity_id); scenarios.append(scenario_id)
+            criticalities.append(float(np.clip(.75 * event.resource_sensitivity + .25 * event.is_privileged_action, 0, 1)))
+            baseline_types.append(baseline.baseline_type); history.append(event)
+
+    return (np.asarray(vectors), np.asarray(labels), np.asarray(entities), np.asarray(scenarios),
+            np.asarray(criticalities), np.asarray(baseline_types))
+
+
+def cold_start_attack_challenge(bundle: ModelBundle, rows: list[LabeledEvent]) -> dict:
+    """Replay every held-out attack scenario under fresh identities and no profile updates."""
+    x, y, entity_values, scenario_values, criticality, baseline_types = cold_start_attack_vectors(
+        rows, bundle.bootstrap_profiles)
+
+    risk = risk_scores(bundle, x, entity_values, criticality); alerted = risk >= bundle.alert_threshold
+    anomaly, sequence, _, deviation = score_components(bundle, x, entity_values)
+    behavior = behavioral_score(anomaly, sequence, deviation, RiskWeights(**bundle.risk_weights))
+    behavior_flagged = behavior >= bundle.behavioral_threshold
+    scenario_result = grouped_recall(alerted, y, scenario_values); by_class = {}
+    for label in sorted(set(y)):
+        mask = y == label; class_scenarios = set(scenario_values[mask])
+        surfaced = set(scenario_values[mask & alerted])
+        by_class[str(label)] = {
+            "event_support": int(np.sum(mask)), "scenario_support": len(class_scenarios),
+            "event_recall": float(np.mean(alerted[mask])),
+            "scenario_recall": len(surfaced) / max(len(class_scenarios), 1),
+            "behavioral_event_recall": float(np.mean(behavior_flagged[mask])),
+        }
+    return {
+        "policy": "all held-out attack scenarios replayed with fresh identities; peer/global priors only; no attack updates profiles",
+        "event_count": len(y), "scenario_count": len(set(scenario_values)),
+        "attack_recall": float(np.mean(alerted)), "behavioral_attack_recall": float(np.mean(behavior_flagged)),
+        "scenario_recall": scenario_result["recall"], "by_attack_class": by_class,
+        "baseline_usage": {str(name): int(np.sum(baseline_types == name)) for name in sorted(set(baseline_types))},
+    }
+
+
 def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entities: np.ndarray,
-                       scenarios: np.ndarray, criticality: np.ndarray) -> dict:
+                       scenarios: np.ndarray, criticality: np.ndarray, history_counts: np.ndarray,
+                       baseline_types: np.ndarray) -> dict:
     started = perf_counter(); scaled = bundle.scaler.transform(x); classifier_predicted, _ = bundle.attack_classifier.predict(scaled)
     anomaly = bundle.anomaly_detector.score(scaled); sequence = bundle.sequence_detector.score_stream(scaled, entities)
     probabilities = bundle.attack_classifier.probabilities(scaled)
@@ -187,6 +313,8 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entiti
             np.mean(alerted[insider_drift]) if np.any(insider_drift) else 0.0),
         "scenario_detection": grouped_recall(alerted, y, scenarios),
         "attacked_entity_recall": len(alerted_attacked_entities) / max(len(attacked_entities), 1),
+        "cold_start_evaluation": cold_start_metrics(
+            alerted, behavior_flagged, classifier_predicted, y, history_counts, baseline_types),
         "priority_threshold": bundle.priority_threshold,
         "priority_queue": binary_alert_metrics(priority, y),
         "top_1_percent": budget_metrics(risk, y, .01), "alerts_per_10000": float(np.mean(alerted) * 10000),
@@ -274,30 +402,8 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     if missing: raise FileNotFoundError(f"Missing datasets: {missing}. Run generate_data.py first.")
     raw_splits = {name: load_split(*pair) for name, pair in paths.items()}
     featured = featurize_splits(raw_splits)
-    x_train, y_train, train_entities, _, _, _ = featured["train"]; normal_mask = y_train == "normal"
+    x_train, y_train, train_entities, _, _, _, _, _ = featured["train"]; normal_mask = y_train == "normal"
     if not np.any(normal_mask): raise ValueError("Training data must contain normal events")
-    scaler = build_scaler().fit(x_train[normal_mask]); scaled_train = scaler.transform(x_train)
-    anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[normal_mask])
-    sequence = GRUSequenceDetector(
-        len(FeaturePipeline.names), random_state=seed, feature_indices=FeaturePipeline.sequence_feature_indices,
-    ).fit(scaled_train, y_train, train_entities)
-    val_x, val_y, val_entities, _, val_scenarios, val_criticality = featured["validation"]
-    calibration_indices, selection_indices, threshold_indices = validation_partitions(val_y)
-    scaled_val = scaler.transform(val_x); candidate_models, candidate_results = {}, {}
-    class_names, class_counts = np.unique(y_train, return_counts=True)
-    count_by_class = dict(zip(class_names, class_counts)); class_total = len(y_train) / len(class_names)
-    xgb_weights = np.asarray([np.sqrt(class_total / count_by_class[label]) for label in y_train])
-    xgb_weights = np.clip(xgb_weights / np.mean(xgb_weights), .2, 12)
-    for kind in ("random_forest", "xgboost"):
-        candidate = AttackClassifier(seed, kind).fit(
-            scaled_train, y_train, sample_weight=xgb_weights if kind == "xgboost" else None)
-        candidate.calibrate(scaled_val[calibration_indices], val_y[calibration_indices])
-        candidate_models[kind] = candidate
-        candidate_results[kind] = classifier_metrics(candidate, scaled_val[selection_indices], val_y[selection_indices])
-    selected_kind = max(candidate_results, key=lambda name: (
-        candidate_results[name]["macro_f1"], candidate_results[name]["malicious_pr_auc"]))
-    classifier = candidate_models[selected_kind]
-    version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bootstrap_memory = MemoryProfiles()
     for row in sorted(raw_splits["train"], key=lambda item: item.event.timestamp):
         bootstrap_memory.update(row.event, trusted=row.label == "normal")
@@ -306,6 +412,31 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         if key.startswith("peer:") or key == "global:organization":
             bootstrap_profiles[key] = {"count": profile["count"],
                                        "data": {name: list(profile.get(name, [])) for name in EMPTY_PROFILE}}
+    scaler = build_scaler().fit(x_train[normal_mask]); scaled_train = scaler.transform(x_train)
+    anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[normal_mask])
+    sequence = GRUSequenceDetector(
+        len(FeaturePipeline.names), random_state=seed, feature_indices=FeaturePipeline.sequence_feature_indices,
+    ).fit(scaled_train, y_train, train_entities)
+    val_x, val_y, val_entities, _, val_scenarios, val_criticality, val_history, val_baselines = featured["validation"]
+    calibration_indices, selection_indices, threshold_indices = validation_partitions(val_y)
+    scaled_val = scaler.transform(val_x); candidate_models, candidate_results = {}, {}
+    cold_x, cold_y, _, _, _, _ = cold_start_attack_vectors(raw_splits["train"], bootstrap_profiles)
+    classifier_x = np.vstack([scaled_train, scaler.transform(cold_x)])
+    classifier_y = np.concatenate([y_train, cold_y])
+    class_names, class_counts = np.unique(classifier_y, return_counts=True)
+    count_by_class = dict(zip(class_names, class_counts)); class_total = len(classifier_y) / len(class_names)
+    xgb_weights = np.asarray([np.sqrt(class_total / count_by_class[label]) for label in classifier_y])
+    xgb_weights = np.clip(xgb_weights / np.mean(xgb_weights), .2, 12)
+    for kind in ("random_forest", "xgboost"):
+        candidate = AttackClassifier(seed, kind).fit(
+            classifier_x, classifier_y, sample_weight=xgb_weights if kind == "xgboost" else None)
+        candidate.calibrate(scaled_val[calibration_indices], val_y[calibration_indices])
+        candidate_models[kind] = candidate
+        candidate_results[kind] = classifier_metrics(candidate, scaled_val[selection_indices], val_y[selection_indices])
+    selected_kind = max(candidate_results, key=lambda name: (
+        candidate_results[name]["macro_f1"], candidate_results[name]["malicious_pr_auc"]))
+    classifier = candidate_models[selected_kind]
+    version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bundle = ModelBundle(version, FEATURE_SCHEMA_VERSION, FeaturePipeline.names, scaler, anomaly, sequence, classifier,
                          50.0, {}, bootstrap_profiles, DEFAULT_RISK_WEIGHTS.as_dict(), .85, 70.0,
                          {"selected": selected_kind, "validation": candidate_results})
@@ -314,11 +445,16 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     threshold_selection = tune_threshold(
         bundle, val_x[threshold_indices], val_y[threshold_indices], val_entities[threshold_indices],
         val_criticality[threshold_indices])
-    validation_metrics = evaluation_metrics(bundle, val_x, val_y, val_entities, val_scenarios, val_criticality)
-    test_x, test_y, test_entities, _, test_scenarios, test_criticality = featured["test"]
+    validation_metrics = evaluation_metrics(
+        bundle, val_x, val_y, val_entities, val_scenarios, val_criticality, val_history, val_baselines)
+    test_x, test_y, test_entities, _, test_scenarios, test_criticality, test_history, test_baselines = featured["test"]
+    test_metrics = evaluation_metrics(
+        bundle, test_x, test_y, test_entities, test_scenarios, test_criticality, test_history, test_baselines)
+    test_metrics["cold_start_evaluation"]["attack_challenge"] = cold_start_attack_challenge(
+        bundle, raw_splits["test"])
     bundle.metrics = {
         "validation": validation_metrics,
-        "test": evaluation_metrics(bundle, test_x, test_y, test_entities, test_scenarios, test_criticality),
+        "test": test_metrics,
         "threshold_selection": threshold_selection,
         "behavioral_threshold_selection": behavioral_threshold_selection,
         "classifier_selection": {"selected": selected_kind, "selection_partition": candidate_results,
@@ -328,6 +464,7 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
             "attack_rows": int(np.sum(~normal_mask)), "preprocessor_fit": "normal_only",
             "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_sequences_only",
             "classifier_fit": "normal_and_attack", "classifier_probability_calibration": "validation_sigmoid",
+            "classifier_cold_start_attack_augmentation_rows": int(len(cold_y)),
             "holdout_profile_policy": "training-seeded online profiles; validation/test labels never consulted"},
         "dataset": json.loads((data_dir / "processed" / "manifest.json").read_text())
             if (data_dir / "processed" / "manifest.json").exists() else {},

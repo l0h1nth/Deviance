@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database.models import EventRecord
 from app.database.session import get_db
+from app.services.profile_service import is_cold_start_baseline
 
 router = APIRouter(tags=["events"])
 
@@ -33,7 +34,7 @@ def event_dict(row: EventRecord) -> dict:
                        "top_contributing_features": prediction.explanation.get("top_contributing_features", []),
                        "risk_composition": prediction.explanation.get("risk_composition", {}),
                        "explanation": prediction.explanation.get("text", ""),
-                       "cold_start": prediction.explanation.get("cold_start", prediction.baseline_type != "entity")})
+                       "cold_start": prediction.explanation.get("cold_start", is_cold_start_baseline(prediction.baseline_type))})
     return result
 
 

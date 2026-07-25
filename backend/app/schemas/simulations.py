@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 SimulationScenario = Literal[
     "mixed", "brute_force", "credential_stuffing", "lateral_movement",
     "impossible_travel", "device_spoofing", "low_slow_exfiltration", "cold_start",
+    "cold_start_benign", "cold_start_attack",
     "concept_drift", "insider_drift",
 ]
 

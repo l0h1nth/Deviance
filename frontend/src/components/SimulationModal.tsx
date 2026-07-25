@@ -3,7 +3,7 @@ import {Pause,Play,Square,X} from 'lucide-react';
 import {api} from '../services/api';
 import type {SimulationStatus} from '../types';
 
-const scenarios=['mixed','brute_force','credential_stuffing','lateral_movement','impossible_travel','device_spoofing','low_slow_exfiltration','cold_start','concept_drift','insider_drift'];
+const scenarios=['mixed','brute_force','credential_stuffing','lateral_movement','impossible_travel','device_spoofing','low_slow_exfiltration','cold_start_benign','cold_start_attack','concept_drift','insider_drift'];
 
 export function SimulationModal({onClose}:{onClose:()=>void}){
   const[scenario,setScenario]=useState('mixed'),[intervalMs,setIntervalMs]=useState(1000),[count,setCount]=useState(30);

@@ -28,6 +28,19 @@ def test_health_and_malformed_event():
         assert client.post("/api/events/ingest",json=bad,headers=headers).status_code==422
 
 
+def test_model_api_exposes_cold_start_safety_metrics():
+    with TestClient(app) as client:
+        response = client.get("/api/metrics/model", headers=auth_headers(client))
+        assert response.status_code == 200
+        cold = response.json()["metrics"]["test"]["cold_start_evaluation"]
+        assert cold["overall"]["normal_count"] > 0
+        assert cold["attack_challenge"]["event_count"] > 0
+        assert set(cold["attack_challenge"]["by_attack_class"]) == {
+            "brute_force", "credential_stuffing", "device_spoofing",
+            "impossible_travel", "lateral_movement", "low_slow_exfiltration",
+        }
+
+
 def test_ingestion_alert_and_analyst_feedback():
     with TestClient(app) as client:
         headers=auth_headers(client)

@@ -12,7 +12,7 @@ from app.ml.feature_registry import registry
 from app.ml.model_bundle import ModelBundle
 from app.schemas.events import AccessEvent
 from app.services.drift_service import DriftService
-from app.services.profile_service import ProfileService
+from app.services.profile_service import ProfileService, is_cold_start_baseline
 from app.services.risk_service import RiskService
 
 
@@ -74,7 +74,7 @@ class PredictionService:
             "baseline": 1.0 if definition.name in {"unique_destination_hosts_5m", "source_ip_unique_entities_5m", "active_concurrent_session_count"} else 0.0,
             "deviation": float(abs(inference["scaled_vector"][index])), "description": definition.description,
         } for index, definition in enumerate(registry.definitions)]
-        cold_start = baseline.baseline_type != "entity"; predicted = inference["predicted_attack"]
+        cold_start = is_cold_start_baseline(baseline.baseline_type); predicted = inference["predicted_attack"]
         explanation = human_explanation(contributions, baseline.baseline_type, cold_start)
         latency_ms = (perf_counter() - started) * 1000
         event_record = EventRecord(event_id=event.event_id, timestamp=event.timestamp, entity_id=event.entity_id,

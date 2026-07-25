@@ -6,7 +6,7 @@ from app.database.models import AlertRecord, AnalystFeedback, EventRecord, Predi
 from app.database.session import get_db
 from app.schemas.alerts import AlertUpdate
 from app.schemas.events import AccessEvent
-from app.services.profile_service import ProfileService
+from app.services.profile_service import ProfileService, is_cold_start_baseline
 
 router = APIRouter(tags=["alerts"])
 
@@ -33,7 +33,7 @@ def alert_dict(alert: AlertRecord, detail: bool = False) -> dict:
                       feature_schema_version=prediction.feature_schema_version, explanation_detail=prediction.explanation,
                       feature_evidence=prediction.explanation.get("feature_evidence", []),
                       risk_composition=prediction.explanation.get("risk_composition", {}),
-                      cold_start=prediction.explanation.get("cold_start", prediction.baseline_type != "entity"),
+                      cold_start=prediction.explanation.get("cold_start", is_cold_start_baseline(prediction.baseline_type)),
                       recommended_actions=prediction.explanation.get("recommended_actions", []),
                       feedback=[{"status": f.status, "analyst": f.analyst, "comment": f.comment, "created_at": f.created_at} for f in alert.feedback])
     return result

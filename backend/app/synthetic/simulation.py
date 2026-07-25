@@ -10,6 +10,7 @@ from app.schemas.events import AccessEvent, LabeledEvent
 SCENARIOS = [
     "mixed", "brute_force", "credential_stuffing", "lateral_movement",
     "impossible_travel", "device_spoofing", "low_slow_exfiltration", "cold_start",
+    "cold_start_benign", "cold_start_attack",
     "concept_drift", "insider_drift",
 ]
 
@@ -30,13 +31,27 @@ def build_simulation_events(path: Path, scenario: str, event_count: int, interva
     template = normal[0] if normal else source[0].event
     now = datetime.now(timezone.utc).replace(microsecond=0)
 
-    if scenario == "cold_start":
+    if scenario in {"cold_start", "cold_start_benign"}:
         selected = [template.model_copy(update={
             "entity_id": "usr-cold-start", "entity_type": "user", "user_id": "usr-cold-start",
             "user_role": "analyst", "department": "Security", "device_id": "dev-cold-start",
             "claimed_device_id": "dev-cold-start", "device_fingerprint": "coldstart-safe-device-001",
             "device_mac_hash": "coldstart-safe-mac-001",
         })]
+    elif scenario == "cold_start_attack":
+        # Preserve each attack's relationships (including credential-stuffing fan-out
+        # and claimed/observed device mismatch) while moving every subject into a new
+        # namespace that cannot already have a runtime profile.
+        attack_events = [row.event for row in source if row.label != "normal"]
+        selected = [event.model_copy(update={
+            "entity_id": f"cold-{event.entity_id}", "user_id": f"cold-{event.entity_id}",
+            "device_id": f"cold-{event.device_id}",
+            "claimed_device_id": f"cold-{event.claimed_device_id}",
+            "device_fingerprint": f"cold-{event.device_fingerprint}",
+            "device_mac_hash": f"cold-{event.device_mac_hash}",
+        }) for event in attack_events]
+        if not selected:
+            raise ValueError("No attack events are available for cold-start attack simulation")
     elif scenario == "concept_drift":
         selected = []
         for index in range(max(event_count, 40)):

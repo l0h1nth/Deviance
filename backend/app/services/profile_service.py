@@ -22,6 +22,14 @@ class Baseline:
     data: dict
 
 
+MATURE_BASELINE_TYPES = frozenset({"entity", "device"})
+
+
+def is_cold_start_baseline(baseline_type: str) -> bool:
+    """Return whether scoring still relies on a fallback rather than a mature subject profile."""
+    return baseline_type not in MATURE_BASELINE_TYPES
+
+
 EMPTY_PROFILE = {
     "login_hours": [], "devices": [], "fingerprints": [], "locations": [], "downloads": [], "uploads": [],
     "session_durations": [], "resources": [], "privileged_resources": [], "auth_methods": [], "commands": [],
@@ -115,7 +123,7 @@ class ProfileService:
         peer = self._record("peer", peer_subject); global_record = self._record("global", "organization")
         if entity and entity.event_count >= self.settings.minimum_user_history:
             chosen, kind, needed = entity, "entity", self.settings.minimum_user_history
-        elif event.entity_type == "edge_device" and device and device.event_count >= self.settings.minimum_user_history:
+        elif device and device.event_count >= self.settings.minimum_user_history:
             chosen, kind, needed = device, "device", self.settings.minimum_user_history
         elif peer and peer.event_count >= self.settings.minimum_peer_history:
             chosen, kind, needed = peer, "peer", self.settings.minimum_peer_history
@@ -153,7 +161,7 @@ class ProfileService:
         return {
             "baseline_type": baseline.baseline_type, "event_count": baseline.event_count,
             "confidence": baseline.confidence, "profile_version": baseline.profile_version,
-            "last_updated": baseline.last_updated, "cold_start": baseline.baseline_type != "entity",
+            "last_updated": baseline.last_updated, "cold_start": is_cold_start_baseline(baseline.baseline_type),
             "normal_login_hours": stats(data.get("login_hours", [])), "known_devices": data.get("devices", []),
             "common_locations": data.get("locations", []), "common_resources": data.get("resources", []),
             "auth_methods": data.get("auth_methods", []), "protocol_ports": data.get("protocol_ports", []),
