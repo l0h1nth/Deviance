@@ -24,6 +24,7 @@ def test_model_save_load_and_inference(tmp_path:Path):
     bundle=make_bundle();path=tmp_path/"model.joblib";bundle.save(path);loaded=ModelBundle.load(path,tmp_path)
     loaded.validate(FeaturePipeline.names);result=loaded.infer(np.zeros(32));assert 0<=result["anomaly_score"]<=1
     assert 0<=result["sequence_anomaly_score"]<=1
+    assert result["predicted_attack"] in set(loaded.attack_classifier.classes_)
 
 
 def test_risk_bounds():

@@ -2,7 +2,7 @@
 
 ## Design objective
 
-Deviance models normal access and connection behavior for users, service accounts, and edge devices. It detects both point anomalies and event-sequence anomalies, estimates which known attack a finding resembles, and preserves uncertainty when the event is unfamiliar.
+Deviance models normal access and connection behavior for users, service accounts, and edge devices. It detects both point anomalies and event-sequence anomalies and assigns findings to the attack types required by the supplied problem taxonomy while retaining classifier confidence.
 
 The core trust boundary is strict: an `AccessEvent` accepted by the live API has no ground-truth field. Offline evaluation joins events to separate `TrainingLabel` sidecars by `event_id`.
 
@@ -10,13 +10,13 @@ The core trust boundary is strict: an `AccessEvent` accepted by the live API has
 
 The generator creates habitual per-entity behavior with varied shifts, offices, stable IP pools, devices, API routes/tokens/scopes, authentication methods, resources, OS/firmware, network protocols, commands, transfers, and benign look-alikes. It then injects randomized multi-event attack scenarios at 0.5–3% of normal sessions (1% by default) and records event prevalence separately.
 
-The default corpus uses an entity-safe 70/15/15 train/validation/test split. No entity appears in more than one split. Within each split events are chronological. The scaler, profiles, Isolation Forest, and GRU detector fit only normal training rows. The classifier alone uses attack labels. Validation data calibrates class probabilities and fixes the analyst-budget threshold; the test split is evaluation only.
+The default corpus uses an entity-safe 70/15/15 train/validation/test split. No entity appears in more than one split. Within each split events are chronological. The scaler, training profiles, Isolation Forest, and GRU detector fit only normal training rows. The classifier alone uses attack labels. Validation and test each begin from training-only profile priors and then update online without consulting labels, so malicious events can contaminate the holdout profile just as unlabeled traffic can in practice. Validation fixes probabilities and thresholds; test changes nothing.
 
 ## Event contract
 
 The v3 schema includes the v2 identity, device, location, resource, network, command, transfer, and session fields plus action/outcome, MFA result, API route/method/status/latency, hashed credential/scopes, source/destination zones, external-destination state, parent authentication correlation, connection action, and device class.
 
-Entity types are `user`, `service_account`, and `edge_device`. Attack sidecar classes are brute force, credential misuse, credential stuffing, lateral movement, impossible travel, device spoofing, and low-and-slow exfiltration.
+Entity types are `user`, `service_account`, and `edge_device`. Attack sidecar classes are brute force, credential stuffing, lateral movement, impossible travel, device spoofing, and low-and-slow exfiltration. Insider drift is a legitimate normal-labeled hard negative, not an attack class.
 
 ## Thirty-two behavioral features
 
@@ -67,7 +67,7 @@ One global Isolation Forest and four domain forests are fitted on scaled normal 
 
 The sequence detector implements GRU reset/update recurrence in a deterministic NumPy recurrent reservoir. It receives a curated 16-signal temporal subset rather than every tabular feature. A ridge decoder learns to predict the next normal temporal vector from up to twelve prior entity events. The five strongest reconstruction residuals form the error, normalized from normal-only training errors.
 
-A balanced 320-tree Random Forest and a regularized XGBoost candidate are trained on normal plus all known attacks. A dedicated validation partition selects the candidate with the strongest Macro F1, using malicious PR-AUC as a tie-break. A different validation partition fits class-balanced one-vs-rest sigmoid calibrators so rare attack probabilities are not erased by normal-class prevalence. If normal-only behavioral evidence is high but no malicious class reaches defensible confidence, the result is `unknown_anomaly`.
+A balanced 320-tree Random Forest and a regularized XGBoost candidate are trained on normal plus the six required attacks. A dedicated validation partition selects the candidate with the strongest Macro F1, using malicious PR-AUC as a tie-break. A different validation partition fits class-balanced one-vs-rest sigmoid calibrators so rare attack probabilities are not erased by normal-class prevalence. When the behavioral layer flags an event that the classifier calls normal, the live pipeline selects the closest required attack class and preserves its potentially low confidence.
 
 ## Risk and explainability
 
@@ -81,7 +81,7 @@ Final risk is bounded to 0–100:
      + 0.05 × resource criticality)
 ```
 
-Validation fixes two risk cutoffs. The broad finding threshold maximizes validation attack recall subject to a 0.10% normal-event false-positive constraint. The independent priority threshold is fixed at the highest-risk one percent of its validation partition. Evaluation reports event, scenario, and attacked-entity recall; finding and priority precision/recall/FPR; known-class and open-set results; and anomaly, sequence, classifier, and behavioral PR-AUC.
+Validation fixes two risk cutoffs. The broad finding threshold maximizes validation attack recall subject to a 0.10% normal-event false-positive constraint. The independent priority threshold is fixed at the highest-risk one percent of its validation partition. Evaluation reports accuracy, Macro F1, per-class results, event/scenario recall, insider-drift FPR, finding and priority precision/recall/FPR, and anomaly, sequence, classifier, and behavioral PR-AUC.
 
 Each result includes the observed feature, expected baseline, normalized deviation, model components, plain-language rationale, recommended response, model/schema versions, and baseline/cold-start context.
 

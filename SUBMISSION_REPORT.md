@@ -2,16 +2,16 @@
 
 ## Problem and solution
 
-Traditional signatures recognize known bad artifacts. Deviance instead learns habitual entity behavior and flags deviations in access, location, device, resource, command, protocol, and time sequences. A three-model ensemble detects unusual behavior, classifies known attack resemblance, preserves unknowns, and gives an analyst inspectable evidence rather than a bare score.
+Traditional signatures recognize known bad artifacts. Deviance instead learns habitual entity behavior and flags deviations in access, location, device, resource, command, protocol, and time sequences. A three-model ensemble detects unusual behavior, classifies it into the required taxonomy, and gives an analyst inspectable evidence rather than a bare score.
 
 ## Deliverable coverage
 
 | Required deliverable | Deviance implementation |
 |---|---|
-| Synthetic generator | 400 mixed entity types, 32 derived dimensions, API-aware benign hard negatives, seven randomized attacks at ~1% of sessions |
+| Synthetic generator | 400 mixed entity types, 32 derived dimensions, API-aware benign hard negatives, six required randomized attacks at ~1% of sessions |
 | Normal baseline | Entity/device/peer/global profiles; normal-only robust scaler and global plus four domain Isolation Forests |
 | Sequence detection | Normal-only twelve-event GRU reconstruction detector using sparse residuals |
-| Attack classification | Validation selection between balanced Random Forest and regularized XGBoost, followed by sigmoid calibration and unknown abstention |
+| Attack classification | Validation selection between balanced Random Forest and regularized XGBoost, followed by sigmoid calibration over only the required classes |
 | Explainability | Feature value, expected baseline, deviation, risk components, rationale, and action guidance |
 | Analyst dashboard | Ranked incident queue, live SSE, investigation, entity timeline, model governance, drift, dispositions |
 | Cold start | Peer/global baseline confidence plus sequence warm-up policy |
@@ -21,15 +21,15 @@ Traditional signatures recognize known bad artifacts. Deviance instead learns ha
 
 ## Evaluation against judging criteria
 
-Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. The operational layer reaches 99.0% precision, 98.6% recall, 0.02% normal-event FPR, and 100% attack-scenario recall. Known-class Macro F1 is 99.8% on the controlled synthetic taxonomy; this is not treated as real-world validation.
+Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. Accuracy is 99.72%, while imbalance-aware Macro F1 is 93.46%. The operational layer reaches 93.98% precision, 86.02% recall, 0.12% normal-event FPR, and 100% attack-scenario recall.
 
-Attack scenarios are injected at 1% of normal sessions, producing 1.91% attack event rows. The normal-only behavioral layer reaches 91.2% PR-AUC and 88.1% recall. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent validation threshold creates the priority queue.
+Attack scenarios are injected at 1% of normal sessions, producing 2.14% test attack rows. The normal-only behavioral layer reaches 80.67% PR-AUC and 73.73% recall. Insider drift remains normal ground truth and has 0% finding FPR. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent threshold creates the priority queue.
 
-Classification covers all requested patterns plus credential stuffing and low-and-slow exfiltration, including API-channel variants. XGBoost beat Random Forest on a dedicated validation selection split. Balanced probability calibration prevents rare classes from being collapsed into normal.
+Classification covers exactly brute force, credential stuffing, lateral movement, impossible travel, device spoofing, low-and-slow exfiltration, and normal, including API-channel variants. Random Forest beat XGBoost on a dedicated validation selection split. Balanced probability calibration prevents rare classes from being collapsed into normal.
 
 Explainability connects raw event fields to 32 engineered signals, two anomaly scores, class probabilities, final risk components, and analyst guidance. It avoids claiming causal SHAP explanations; these are transparent feature deviations and weighted evidence.
 
-Cold start and drift are observable states rather than hidden special cases. Trusted-only adaptation prevents detected attacks from immediately poisoning the baseline.
+Cold start and drift are observable states rather than hidden special cases. Holdout profiles evolve without label access, and production profiles use low-risk trust gating to limit poisoning.
 
 System design is runnable on a laptop and has clear production seams. The repeatable benchmark measures sequential per-event scoring through all five anomaly forests, temporal reconstruction, classifier, risk, and explanation layers.
 

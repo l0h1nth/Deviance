@@ -15,6 +15,13 @@ RESOURCES = [
     ("prod-console", "infrastructure", .95, "ssh", 22), ("files", "storage", .4, "smb", 445),
     ("iot-hub", "device_function", .65, "mqtt", 8883), ("edge-control", "device_function", .9, "opcua", 4840),
 ]
+INSIDER_DRIFT_RESOURCES = [
+    ("wiki", "application", .2, "https", 443),
+    ("git", "repository", .5, "ssh", 22),
+    ("files", "storage", .6, "smb", 445),
+    ("payroll", "database", .85, "database", 5432),
+    ("prod-console", "infrastructure", .95, "ssh", 22),
+]
 
 
 def fingerprint(seed: str) -> str:
@@ -134,9 +141,38 @@ def generate_normal(entities: list[SyntheticEntity], events_per_user: int, rng: 
             hour = (entity.shift_hour + rng.normal(0, 1.4)) % 24
             stamp = start + timedelta(days=day, hours=float(hour), minutes=int(rng.integers(0, 60)), seconds=int(rng.integers(0, 60)))
             event = normal_event(entity, stamp, index, rng); updates = {}
+            drift_start = int(events_per_user * .65)
+            insider_drift = (
+                entity.entity_type == "user" and entity_index % 12 == 0
+                and position >= drift_start and position % 5 == 0
+            )
 
             # Hard benign negatives: typos, approved exports, maintenance, device changes and legitimate travel.
-            if position % 41 == 7 and entity.entity_type == "user":
+            # Insider drift is deliberately benign: a legitimate user slowly receives broader access.
+            # It is retained as normal ground truth so it directly measures false-positive resistance.
+            if insider_drift:
+                progression = (position - drift_start) / max(events_per_user - drift_start - 1, 1)
+                resource_index = min(
+                    len(INSIDER_DRIFT_RESOURCES) - 1,
+                    int(progression * len(INSIDER_DRIFT_RESOURCES)),
+                )
+                resource = INSIDER_DRIFT_RESOURCES[resource_index]
+                privileged = progression >= .8
+                updates.update(
+                    event_type="admin_action" if privileged else "resource_access",
+                    action="execute" if privileged else "read", access_outcome="allowed",
+                    authentication_result="not_applicable", auth_method="not_applicable",
+                    mfa_result="not_applicable", api_route=None, http_method=None,
+                    http_status_code=None, api_latency_ms=None, credential_id_hash=None,
+                    token_scopes=[], device_connection_action="not_applicable",
+                    resource_id=resource[0], resource_type=resource[1],
+                    resource_sensitivity=resource[2], destination_host=f"{resource[0]}.internal",
+                    destination_network_zone="restricted" if resource[2] >= .8 else "internal",
+                    is_external_destination=False, network_protocol=resource[3],
+                    destination_port=resource[4], is_privileged_action=privileged,
+                    command_sequence=["list_resources", "read_config"] if privileged else [],
+                )
+            elif position % 41 == 7 and entity.entity_type == "user":
                 updates.update(event_type="login", action="authenticate", access_outcome="denied",
                                authentication_result="failure", auth_method="password", mfa_result="not_used",
                                api_route=None, http_method=None, http_status_code=None, api_latency_ms=None,
@@ -173,7 +209,8 @@ def generate_normal(entities: list[SyntheticEntity], events_per_user: int, rng: 
                                is_privileged_action=True, command_sequence=["maintenance_check", "restart_service"])
 
             event = event.model_copy(update=updates)
-            records.append(LabeledEvent(event=event, label="normal", scenario_id=f"normal-{entity.entity_id}",
+            scenario_id = f"insider_drift-{entity.entity_id}" if insider_drift else f"normal-{entity.entity_id}"
+            records.append(LabeledEvent(event=event, label="normal", scenario_id=scenario_id,
                                         sequence_id=event.session_id))
             index += 1
     return sorted(records, key=lambda row: row.event.timestamp)

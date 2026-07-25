@@ -1,17 +1,17 @@
 # Deviance
 
-Deviance is an AI-powered behavioral anomaly detection system for users, service accounts, and edge devices. It learns normal access behavior, evaluates event sequences in near real time, classifies known attack patterns, abstains on unfamiliar anomalies, explains every risk score, groups related events into incidents, and presents a ranked SOC analyst queue.
+Deviance is an AI-powered behavioral anomaly detection system for users, service accounts, and edge devices. It learns normal access behavior, evaluates event sequences in near real time, classifies findings into the required attack taxonomy, explains every risk score, groups related events into incidents, and presents a ranked SOC analyst queue.
 
-It implements the full hackathon brief: synthetic behavioral data, extreme class imbalance, sequential detection, brute force, credential misuse, credential stuffing, lateral movement, impossible travel, device spoofing, low-and-slow exfiltration, cold start, concept/insider drift, explainability, scalability evidence, and an analyst dashboard.
+It implements the full hackathon brief: synthetic behavioral data, extreme class imbalance, sequential detection, brute force, credential stuffing, lateral movement, impossible travel, device spoofing, low-and-slow exfiltration, cold start, concept/insider drift, explainability, scalability evidence, and an analyst dashboard.
 
 ## Architecture at a glance
 
 - Production telemetry has no label. Ground truth exists only in offline `*_labels.jsonl` sidecars.
 - The scaler, one global Isolation Forest, four signal-domain Isolation Forests, bundled cold-start profile priors, and GRU sequence detector learn only normal events.
-- Random Forest and XGBoost candidates learn normal plus seven labeled attack types. A dedicated validation partition selects the stronger candidate, and separate validation data calibrates its probabilities.
+- Random Forest and XGBoost candidates learn normal plus the six required labeled attack types. A dedicated validation partition selects the stronger candidate, and separate validation data calibrates its probabilities.
 - Thirty-two behavioral features cover API/authentication windows, 30-day history, identity/device novelty, IP fan-out, travel, actions, ordered commands, entropy, privilege expansion, protocols, and cumulative transfers.
 - Risk combines 30% domain/global anomaly evidence, 5% GRU sequence novelty, 25% classifier evidence, 35% profile deviation, and 5% resource criticality.
-- High anomaly with weak known-class evidence produces `unknown_anomaly` instead of a forced attack label.
+- Behavioral anomalies are assigned to the closest required attack class while retaining honest classifier confidence; no extra classifier class is introduced.
 - A recall-oriented finding threshold is constrained by validation false positives; a second frozen threshold reserves the highest-risk one percent for priority triage.
 - Related alerts are grouped into 15-minute entity/attack incidents and ranked by maximum risk.
 - Trusted analyst outcomes update profiles; attack-like events do not poison normal baselines.
@@ -49,7 +49,7 @@ python backend/scripts/generate_data.py
 python backend/scripts/train_models.py --contamination 0.03
 ```
 
-The default seed-42 corpus contains 400 entities and 73,399 train/validation/test events: 72,000 normal events plus 1,399 attack events from scenarios injected at approximately 1% of normal sessions. The splits are entity-disjoint and chronological. `data/processed/manifest.json` records both scenario and event prevalence plus integrity checks.
+The default seed-42 corpus contains 400 entities and 73,591 train/validation/test events: 72,000 normal events plus 1,591 attack events from scenarios injected at approximately 1% of normal sessions. The splits are entity-disjoint and chronological. `data/processed/manifest.json` records both scenario and event prevalence plus integrity checks.
 
 ## Run the application
 
@@ -90,7 +90,7 @@ Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` before any non-demo
 7. Mark it investigating, confirmed threat, false positive, or closed; the disposition is persisted in its audit history.
 8. Run `concept_drift`, `insider_drift`, or `cold_start` to demonstrate the non-attack edge cases required by the brief.
 
-Available scenarios are `mixed`, `brute_force`, `credential_misuse`, `credential_stuffing`, `lateral_movement`, `impossible_travel`, `device_spoofing`, `low_slow_exfiltration`, `cold_start`, `concept_drift`, and `insider_drift`.
+Available scenarios are `mixed`, `brute_force`, `credential_stuffing`, `lateral_movement`, `impossible_travel`, `device_spoofing`, `low_slow_exfiltration`, `cold_start`, `concept_drift`, and `insider_drift`.
 
 ## Example production-shaped event
 
@@ -184,9 +184,9 @@ npm run build
 
 ## Current honest evaluation
 
-The fresh seed-42 test split contains 11,010 events from 60 unseen entities with 1.91% attack events from scenarios injected at roughly 1% of sessions. The operational finding layer reaches 99.0% precision and 98.6% recall at a 0.02% normal-event false-positive rate. Normal-only behavioral evidence reaches 91.2% PR-AUC and 88.1% recall, while scenario and attacked-entity recall are both 100%. The separately frozen priority queue has 100% precision and 57.6% recall.
+The seed-42 test split contains 11,036 events from 60 unseen entities with 2.14% attack events from scenarios injected at roughly 1% of sessions. Classifier accuracy is 99.72%, but the more informative Macro F1 is 93.46% because an always-normal prediction already achieves 97.86% accuracy. The operational layer reaches 93.98% precision and 86.02% recall at a 0.12% normal-event false-positive rate. Normal-only behavioral evidence reaches 80.67% PR-AUC and 73.73% recall. Insider-drift FPR is 0%, and all 38 attack scenarios have at least one surfaced event.
 
-Known-class Macro F1 is 99.8% on the controlled synthetic taxonomy. That high number is generator-dependent and is not a production guarantee; the normal-only and open-set measurements remain the primary evidence of behavioral detection. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, counts, every class, RF-versus-XGBoost selection, and limitations.
+Validation selected Random Forest over XGBoost. All scores remain generator-dependent rather than production guarantees. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, confusion matrices, class support, candidate selection, and limitations.
 
 ## Production boundaries
 

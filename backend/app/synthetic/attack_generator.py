@@ -8,7 +8,7 @@ from app.synthetic.normal_generator import RESOURCES, fingerprint
 
 
 ATTACK_TYPES = [
-    "brute_force", "credential_misuse", "credential_stuffing", "lateral_movement",
+    "brute_force", "credential_stuffing", "lateral_movement",
     "impossible_travel", "device_spoofing", "low_slow_exfiltration",
 ]
 
@@ -61,44 +61,6 @@ def brute_force(entity: SyntheticEntity, base: AccessEvent, scenario: int,
             device_id=f"unknown-{scenario % 97}", claimed_device_id=base.device_id,
             device_fingerprint=fingerprint(f"bf:{scenario}:{index % 2}"), device_mac_hash=fingerprint(f"bfmac:{scenario}")))
     return records
-
-
-def credential_misuse(entity: SyntheticEntity, base: AccessEvent, scenario: int,
-                       rng: np.random.Generator | None = None) -> list[LabeledEvent]:
-    rng = rng or np.random.default_rng(scenario)
-    office = OFFICES[(OFFICES.index(entity.office) + int(rng.integers(2, len(OFFICES)))) % len(OFFICES)]
-    device = f"foreign-{scenario}-{int(rng.integers(10, 999))}"
-    fp = fingerprint(f"stolen:{scenario}:{rng.integers(9999)}")
-    api_channel = bool(rng.random() < .45)
-    stolen_credential = entity.credential_id_hash
-    return [
-        _copy(base, label="credential_misuse", scenario=scenario, index=0, seconds=0,
-              event_type="api_call" if api_channel else "login", action="invoke" if api_channel else "authenticate",
-              access_outcome="allowed", authentication_result="success", auth_method="token" if api_channel else "password",
-              mfa_result="not_used", api_route="/api/v1/profile" if api_channel else None,
-              http_method="GET" if api_channel else None, http_status_code=200 if api_channel else None,
-              api_latency_ms=45.0 if api_channel else None, credential_id_hash=stolen_credential if api_channel else None,
-              token_scopes=["profile:read"] if api_channel else [], device_connection_action="not_applicable", device_id=device,
-              claimed_device_id=base.device_id, operating_system=rng.choice(["Linux", "Android", "Windows 11"]).item(),
-              device_fingerprint=fp, device_mac_hash=fingerprint(f"foreignmac:{scenario}"), country=office.country,
-              city=office.city, latitude=office.latitude, longitude=office.longitude,
-              source_ip=f"203.0.113.{int(rng.integers(1, 250))}", is_vpn=False),
-        _copy(base, label="credential_misuse", scenario=scenario, index=1, seconds=int(rng.integers(35, 150)),
-              event_type="api_call" if api_channel else "file_download", action="invoke" if api_channel else "read",
-              access_outcome="allowed", authentication_result="success" if api_channel else "not_applicable",
-              auth_method="token" if api_channel else "not_applicable", mfa_result="not_used" if api_channel else "not_applicable",
-              api_route="/api/v1/payroll/export" if api_channel else None,
-              http_method="POST" if api_channel else None, http_status_code=200 if api_channel else None,
-              api_latency_ms=180.0 if api_channel else None, credential_id_hash=stolen_credential if api_channel else None,
-              token_scopes=["payroll:export"] if api_channel else [], device_connection_action="not_applicable",
-              device_id=device, claimed_device_id=base.device_id, device_fingerprint=fp,
-              device_mac_hash=fingerprint(f"foreignmac:{scenario}"), country=office.country, city=office.city,
-              latitude=office.latitude, longitude=office.longitude, resource_id="payroll", resource_type="database",
-              resource_sensitivity=.9, destination_host="payroll.internal", network_protocol="database",
-              destination_port=5432, destination_network_zone="external", is_external_destination=True,
-              bytes_downloaded=int(rng.integers(8_000_000, 35_000_000)),
-              session_duration_seconds=int(rng.integers(45, 240))),
-    ]
 
 
 def credential_stuffing(entities: list[SyntheticEntity], bases: list[AccessEvent], scenario: int,
@@ -209,7 +171,7 @@ def low_slow_exfiltration(entity: SyntheticEntity, base: AccessEvent, scenario: 
 
 
 GENERATORS = {
-    "brute_force": brute_force, "credential_misuse": credential_misuse,
+    "brute_force": brute_force,
     "lateral_movement": lateral_movement, "impossible_travel": impossible_travel,
     "device_spoofing": device_spoofing, "low_slow_exfiltration": low_slow_exfiltration,
 }

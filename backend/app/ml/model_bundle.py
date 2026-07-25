@@ -49,10 +49,17 @@ class ModelBundle:
         deviation = float(np.clip(np.mean(np.minimum(np.abs(scaled[0]), 5)) / 3, 0, 1))
         behavior = float(behavioral_score(
             anomaly_score, sequence_anomaly_score, deviation, RiskWeights(**self.risk_weights)))
-        # Abstain only on strong novelty. Moderate anomaly evidence contributes to
-        # risk without being mislabeled as an unknown attack.
-        if behavior >= self.behavioral_threshold and malicious < .55:
-            predicted = "unknown_anomaly"
+        # The required taxonomy has no extra output class. Once the normal-only layer
+        # establishes an anomaly, route a classifier-normal result to the closest
+        # required attack class and retain its honest (possibly low) confidence.
+        if behavior >= self.behavioral_threshold and predicted == "normal":
+            malicious_indices = [
+                index for index, name in enumerate(self.attack_classifier.classes_) if name != "normal"
+            ]
+            if malicious_indices:
+                selected = max(malicious_indices, key=lambda index: probabilities[index])
+                predicted = str(self.attack_classifier.classes_[selected])
+                confidence = float(probabilities[selected])
         return {"anomaly_score": anomaly_score, "sequence_anomaly_score": sequence_anomaly_score, "predicted_attack": predicted,
                 "classifier_confidence": confidence, "class_probabilities": class_probabilities,
                 "behavioral_score": behavior, "domain_anomaly_scores": domain_anomaly_scores,

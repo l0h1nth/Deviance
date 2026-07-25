@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from app.ml.training import featurize_splits, train
-from app.synthetic.attack_generator import generate_attacks
+from app.synthetic.attack_generator import ATTACK_TYPES, generate_attacks
 from app.synthetic.normal_generator import build_users, generate_normal
 
 
@@ -34,3 +34,15 @@ def test_training_pipeline(tmp_path):
     assert "0.10% normal-event FPR" in bundle.metrics["threshold_selection"]["selection_method"]
     assert bundle.attack_classifier.model_kind in {"random_forest", "xgboost"}
     assert bundle.anomaly_detector.model_metadata()["type"] == "DomainIsolationForestEnsemble"
+    test_metrics = bundle.metrics["test"]
+    assert 0 <= test_metrics["classifier_accuracy"] <= 1
+    assert "open_set_macro_f1" not in test_metrics
+    assert "insider_drift_false_positive_rate" in test_metrics
+    assert set(bundle.attack_classifier.classes_) == {"normal", *ATTACK_TYPES}
+
+
+def test_insider_drift_is_a_benign_hard_negative():
+    rng = np.random.default_rng(19)
+    rows = generate_normal(build_users(24, rng), 180, rng)
+    drift = [row for row in rows if row.scenario_id.startswith("insider_drift-")]
+    assert drift and all(row.label == "normal" for row in drift)

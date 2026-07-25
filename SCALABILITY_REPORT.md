@@ -8,15 +8,15 @@ Command:
 python backend/scripts/benchmark_inference.py --events 1000 --warmup 100
 ```
 
-Environment: one local Python process, feature vectors precomputed, one event scored at a time through the scaler, one global plus four domain Isolation Forests, 16-signal GRU recurrence, and calibrated validation-selected XGBoost. Model `v20260725-181939`, schema 3.0.0.
+Environment: one local Python process, feature vectors precomputed, one event scored at a time through the scaler, one global plus four domain Isolation Forests, 16-signal GRU recurrence, and calibrated validation-selected Random Forest. Model `v20260725-185821`, schema 3.0.0.
 
 | Measure | Result |
 |---|---:|
-| Median model latency | 60.46 ms |
-| P95 model latency | 94.00 ms |
-| P99 model latency | 107.69 ms |
-| Mean model latency | 67.69 ms |
-| Sequential throughput | 14.76 events/second |
+| Median model latency | 107.21 ms |
+| P95 model latency | 117.58 ms |
+| P99 model latency | 122.94 ms |
+| Mean model latency | 106.15 ms |
+| Sequential throughput | 9.42 events/second |
 
 The measured path is comfortably interactive for the solo demonstration but is not a high-volume SIEM benchmark. It excludes HTTP, database, feature extraction, network, and queue time, so production capacity must be measured end to end.
 
@@ -32,7 +32,7 @@ collectors → durable stream → entity-partitioned feature workers
            → analytical store + SOC API + notification tier
 ```
 
-At the measured single-worker rate, 100 identical inference workers imply roughly 1,476 events/second before orchestration overhead; this is a planning estimate, not a measured claim. Batch scoring can improve tree-model efficiency, while per-entity micro-batches retain short-window ordering.
+At the measured single-worker rate, 100 identical inference workers imply roughly 942 events/second before orchestration overhead; this is a planning estimate, not a measured claim. Batch scoring can improve tree-model efficiency, while per-entity micro-batches retain short-window ordering.
 
 ## Required production work
 

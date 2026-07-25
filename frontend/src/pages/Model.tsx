@@ -7,14 +7,14 @@ export function ModelPage({model}:{model:any}){
   const population=metrics.training_population||{},classifierSelection=metrics.classifier_selection||{};
   const scenario=test.scenario_detection||{},priority=test.priority_queue||{};
   const cards=[
-    ['Classifier Macro F1',test.macro_f1,'Unweighted event-level classification F1 across normal and the seven known attack classes.'],
+    ['Classifier accuracy',test.classifier_accuracy,'Correct multiclass predictions divided by all holdout events. Read with Macro F1 because normal events dominate.'],
+    ['Classifier Macro F1',test.macro_f1,'Unweighted event-level classification F1 across normal and the six required attack classes.'],
     ['Classifier PR-AUC',test.classifier_pr_auc,'Known-attack probability ranking on the imbalanced untouched holdout.'],
     ['Behavioral PR-AUC',test.behavioral_pr_auc,'Normal-only Isolation Forest, GRU, and profile-deviation ranking without classifier evidence.'],
     ['Behavioral recall',test.behavioral_recall,'Attacks caught using only normal-trained behavioral evidence at its frozen threshold.'],
     ['Finding precision',test.alert_precision,'Precision of operational findings at the recall-oriented validation threshold.'],
     ['Finding recall',test.alert_recall,'Event-level attacks surfaced by the operational finding threshold.'],
     ['Scenario recall',scenario.recall,'Injected multi-event attack scenarios with at least one event surfaced.'],
-    ['Entity recall',test.attacked_entity_recall,'Attacked holdout entities with at least one event surfaced.'],
   ];
   return <>
     <header className="page-head"><div><span className="eyebrow">MODEL GOVERNANCE</span><h1>Performance</h1><p>Entity-disjoint chronological evaluation with normal-only anomaly learning, a held-out classifier choice, and two analyst thresholds.</p></div></header>
@@ -34,6 +34,7 @@ export function ModelPage({model}:{model:any}){
       <div><dt>Finding selection</dt><dd>{selection.selection_method||'Recall under validation FPR constraint'}</dd></div>
       <div><dt>Validation finding FPR</dt><dd>{percent(selection.validation_false_positive_rate)}</dd></div>
       <div><dt>Holdout finding FPR</dt><dd>{percent(test.alert_false_positive_rate)}</dd></div>
+      <div><dt>Insider-drift FPR</dt><dd>{percent(test.insider_drift_false_positive_rate)}</dd></div>
       <div><dt>Holdout findings / 10k</dt><dd>{number(test.alerts_per_10000)}</dd></div>
       <div><dt>Frozen priority precision</dt><dd>{percent(priority.precision)}</dd></div>
       <div><dt>Frozen priority recall</dt><dd>{percent(priority.recall)}</dd></div>

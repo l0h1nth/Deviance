@@ -10,15 +10,15 @@ Every login, API call, resource access, command, and device connection creates a
 
 ## Slide 3 — Synthetic environment
 
-400 entities; 73,399 train/validation/test events; users, service accounts, and edge devices; varied offices, shifts, stable IPs, devices, API routes/tokens, auth methods, protocols, commands, resources, transfers, and benign look-alikes. Seven multi-event attack patterns are injected at about 1% of sessions. Labels are offline sidecars only.
+400 entities; 73,591 train/validation/test events; users, service accounts, and edge devices; varied offices, shifts, stable IPs, devices, API routes/tokens, auth methods, protocols, commands, resources, transfers, and benign look-alikes. The six required multi-event attack patterns are injected at about 1% of sessions. Labels are offline sidecars only; insider drift is a normal-labeled edge case.
 
 ## Slide 4 — The three-model ensemble
 
-A global Isolation Forest plus four signal-domain forests detect unusual 32-feature snapshots. A twelve-event GRU recurrence over 16 temporal signals detects unexpected sequence behavior. Random Forest and XGBoost candidates compete on validation performance before probability calibration. High normal-only novelty with weak class evidence becomes unknown anomaly.
+A global Isolation Forest plus four signal-domain forests detect unusual 32-feature snapshots. A twelve-event GRU recurrence over 16 temporal signals detects unexpected sequence behavior. Random Forest and XGBoost candidates compete on validation performance before probability calibration. Findings are assigned only to normal or the six required attack classes.
 
 ## Slide 5 — No anomaly-label leakage
 
-The scaler, profiles, Isolation Forest, and GRU fit normal events only. Only the attack classifier sees attack labels. Train, validation, and test have no shared entities. Validation calibrates probabilities and the alert threshold; test data is untouched until evaluation.
+The scaler, training profiles, Isolation Forest, and GRU fit normal training events only. Only the attack classifier sees attack labels. Train, validation, and test have no shared entities. Holdout profiles begin from training-only priors and update chronologically without label access. Validation calibrates probabilities and thresholds; test changes nothing.
 
 ## Slide 6 — Explainable risk
 
@@ -34,7 +34,7 @@ New entities use peer/global baselines with explicit low confidence, and sequenc
 
 ## Slide 9 — Honest results
 
-Entity-disjoint test: 11,010 events, 1.91% attack rows. Operational precision 99.0%, recall 98.6%, and normal-event FPR 0.02%. Normal-only behavioral PR-AUC is 91.2% with 88.1% attack recall. Scenario and attacked-entity recall are 100%. Known-class Macro F1 is 99.8% on the controlled taxonomy; synthetic results are not production guarantees.
+Entity-disjoint test: 11,036 events with 2.14% attack rows. Accuracy is 99.72%, but Macro F1 is 93.46% and is more meaningful under imbalance. Operational precision is 93.98%, recall 86.02%, and normal-event FPR 0.12%. Behavioral-only PR-AUC is 80.67% with 73.73% attack recall. Insider-drift FPR is 0%, and all 38 attack scenarios are surfaced. Synthetic results are not production guarantees.
 
 ## Slide 10 — Live demo
 
@@ -42,7 +42,7 @@ Login with displayed admin credentials. Run mixed simulation. Show live event sc
 
 ## Slide 11 — Scalability
 
-Local sequential model inference with five anomaly forests: 107 ms median, 116 ms P95, 9.4 events/sec. Production design partitions by entity across durable-stream consumers with Redis/feature-store state, horizontally scaled model serving, analytical storage, and durable notifications.
+Local sequential model inference with five anomaly forests: 107 ms median, 118 ms P95, 9.4 events/sec. Production design partitions by entity across durable-stream consumers with Redis/feature-store state, horizontally scaled model serving, analytical storage, and durable notifications.
 
 ## Slide 12 — Close
 

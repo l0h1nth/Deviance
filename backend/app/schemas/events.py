@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 AttackLabel = Literal[
-    "normal", "brute_force", "credential_misuse", "credential_stuffing",
+    "normal", "brute_force", "credential_stuffing",
     "lateral_movement", "impossible_travel", "device_spoofing", "low_slow_exfiltration",
 ]
 EntityType = Literal["user", "service_account", "edge_device"]

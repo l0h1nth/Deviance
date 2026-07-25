@@ -40,13 +40,11 @@ class RiskService:
         specific = {
             "brute_force": "Rate-limit authentication and inspect the source session",
             "credential_stuffing": "Block the source campaign and identify all targeted entities",
-            "credential_misuse": "Revoke active sessions and rotate credentials",
             "lateral_movement": "Isolate the device and inspect destination hosts and commands",
             "impossible_travel": "Verify travel/VPN context and compare overlapping sessions",
             "device_spoofing": "Challenge device trust and re-enrol the endpoint",
             "low_slow_exfiltration": "Review cumulative sensitive transfers and destination ownership",
-            "unknown_anomaly": "Escalate for threat hunting because the sequence does not match a known class",
             "normal": "Monitor for corroborating activity",
         }
         if severity == "critical": base.insert(0, "Escalate immediately to incident response")
-        return [specific.get(predicted, specific["unknown_anomaly"]), *base]
+        return [specific.get(predicted, specific["normal"]), *base]

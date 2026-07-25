@@ -119,9 +119,9 @@ class PredictionService:
                         "sequence_anomaly_score": inference["sequence_anomaly_score"]}
         drift = DriftService(self.db).observe(event.entity_id, drift_values) if event_record.trusted else []
         self.db.commit()
-        display = "Unknown behavioral anomaly" if predicted == "unknown_anomaly" else (
-            f"Possible {predicted.replace('_', ' ').title()}" if inference["classifier_confidence"] < .6 and predicted != "normal"
-            else predicted.replace("_", " ").title())
+        display = (f"Possible {predicted.replace('_', ' ').title()}"
+                   if inference["classifier_confidence"] < .6 and predicted != "normal"
+                   else predicted.replace("_", " ").title())
         return {
             "event_id": event.event_id, "entity_id": event.entity_id, "entity_type": event.entity_type,
             "anomaly_score": inference["anomaly_score"], "sequence_anomaly_score": inference["sequence_anomaly_score"],

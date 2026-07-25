@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
 import numpy as np
-from sklearn.metrics import average_precision_score, classification_report, confusion_matrix, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, average_precision_score, classification_report, confusion_matrix, f1_score, roc_auc_score
 
 from app.ml.anomaly_model import IsolationForestDetector
 from app.ml.attack_classifier import AttackClassifier
@@ -43,8 +44,8 @@ class MemoryProfiles:
         confidence = min(1.0, .25 + .75 * data["count"] / max(minimum * 2, 1)) if data["count"] else .1
         return Baseline(kind, data["count"], confidence, data["count"], datetime.now(timezone.utc).isoformat(), clean)
 
-    def update(self, event: AccessEvent, label: str) -> None:
-        if label != "normal": return
+    def update(self, event: AccessEvent, trusted: bool) -> None:
+        if not trusted: return
         for kind in ("entity", "device", "peer", "global"):
             key = self._key(kind, event); current = self.profiles[key]; count = int(current.get("count", 0))
             updated = update_profile_data(current, event); updated["count"] = count + 1; self.profiles[key] = updated
@@ -68,16 +69,22 @@ def load_split(event_path: Path, label_path: Path) -> list[LabeledEvent]:
 
 
 def featurize_splits(splits: dict[str, list[LabeledEvent]]) -> dict[str, tuple[np.ndarray, ...]]:
-    pipeline, profiles, history = FeaturePipeline(), MemoryProfiles(), []
+    pipeline, training_profiles = FeaturePipeline(), MemoryProfiles()
     result = {}
     for split_name in ("train", "validation", "test"):
+        # Validation and test each begin from the same training-only priors, then
+        # evolve chronologically without consulting labels. This models online
+        # adaptation while allowing anomalous traffic to contaminate the profile.
+        profiles = training_profiles if split_name == "train" else deepcopy(training_profiles)
+        history = []
         vectors, labels, entities, sequences, scenarios, criticalities = [], [], [], [], [], []
         for row in sorted(splits[split_name], key=lambda item: item.event.timestamp):
             event = row.event; vector, _ = pipeline.transform_one(event, history, profiles.baseline(event))
             vectors.append(vector); labels.append(row.label); entities.append(event.entity_id)
             sequences.append(row.sequence_id); scenarios.append(row.scenario_id)
             criticalities.append(float(np.clip(.75 * event.resource_sensitivity + .25 * event.is_privileged_action, 0, 1)))
-            profiles.update(event, row.label); history.append(event)
+            profiles.update(event, trusted=(row.label == "normal") if split_name == "train" else True)
+            history.append(event)
             if len(history) > 3000: history = history[-3000:]
         result[split_name] = (
             np.asarray(vectors), np.asarray(labels), np.asarray(entities), np.asarray(sequences),
@@ -140,14 +147,9 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entiti
     malicious = probabilities[:, malicious_indices].max(axis=1) if malicious_indices else np.zeros(len(x))
     deviation = np.clip(np.mean(np.minimum(np.abs(scaled), 5), axis=1) / 3, 0, 1)
     behavior = behavioral_score(anomaly, sequence, deviation, RiskWeights(**bundle.risk_weights))
-    open_predicted = np.asarray(["unknown_anomaly" if b >= bundle.behavioral_threshold and m < .55 else p
-                                 for p, b, m in zip(classifier_predicted, behavior, malicious)])
     report = classification_report(y, classifier_predicted, output_dict=True, zero_division=0)
     labels = sorted(set(y) | set(classifier_predicted)); matrix = confusion_matrix(y, classifier_predicted, labels=labels)
-    open_labels = sorted(set(y) | set(open_predicted)); open_matrix = confusion_matrix(y, open_predicted, labels=open_labels)
-    normal = y == "normal"; pred_normal = open_predicted == "normal"
-    fp, tn = int(np.sum(normal & ~pred_normal)), int(np.sum(normal & pred_normal))
-    fn, tp = int(np.sum(~normal & pred_normal)), int(np.sum(~normal & ~pred_normal))
+    normal = y == "normal"
     binary = (y != "normal").astype(int)
     try:
         anomaly_roc = float(roc_auc_score(binary, anomaly)); anomaly_pr = float(average_precision_score(binary, anomaly))
@@ -158,15 +160,13 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entiti
     alert_tp, alert_fp = int(np.sum((y != "normal") & alerted)), int(np.sum(normal & alerted))
     alert_fn, alert_tn = int(np.sum((y != "normal") & ~alerted)), int(np.sum(normal & ~alerted))
     behavior_flagged = behavior >= bundle.behavioral_threshold
+    insider_drift = np.asarray([str(value).startswith("insider_drift-") for value in scenarios])
     attacked_entities = set(entities[y != "normal"]); alerted_attacked_entities = set(entities[(y != "normal") & alerted])
     return {
         "classes": labels, "confusion_matrix": matrix.tolist(), "classification_report": report,
+        "classifier_accuracy": float(accuracy_score(y, classifier_predicted)),
         "macro_f1": float(f1_score(y, classifier_predicted, average="macro")),
         "weighted_f1": float(f1_score(y, classifier_predicted, average="weighted")),
-        "open_set_classes": open_labels, "open_set_confusion_matrix": open_matrix.tolist(),
-        "open_set_classification_report": classification_report(y, open_predicted, output_dict=True, zero_division=0),
-        "open_set_macro_f1": float(f1_score(y, open_predicted, average="macro")),
-        "false_positive_rate": fp / max(fp + tn, 1), "false_negative_rate": fn / max(fn + tp, 1),
         "anomaly_roc_auc": anomaly_roc, "anomaly_pr_auc": anomaly_pr,
         "sequence_roc_auc": sequence_roc, "sequence_pr_auc": sequence_pr,
         "classifier_pr_auc": float(average_precision_score(binary, malicious)),
@@ -174,6 +174,8 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entiti
         "behavioral_threshold": bundle.behavioral_threshold,
         "behavioral_recall": float(np.sum((y != "normal") & behavior_flagged) / max(np.sum(y != "normal"), 1)),
         "behavioral_false_positive_rate": float(np.sum(normal & behavior_flagged) / max(np.sum(normal), 1)),
+        "behavioral_insider_drift_false_positive_rate": float(
+            np.mean(behavior_flagged[insider_drift]) if np.any(insider_drift) else 0.0),
         "behavioral_recall_by_attack_class": {
             str(label): float(np.mean(behavior_flagged[y == label])) for label in sorted(set(y) - {"normal"})},
         "sample_count": len(y), "attack_prevalence": float(np.mean(y != "normal")),
@@ -181,6 +183,8 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entiti
         "threshold": bundle.alert_threshold, "alert_count": int(np.sum(alerted)), "alert_rate": float(np.mean(alerted)),
         "alert_precision": alert_tp / max(alert_tp + alert_fp, 1), "alert_recall": alert_tp / max(alert_tp + alert_fn, 1),
         "alert_false_positive_rate": alert_fp / max(alert_fp + alert_tn, 1),
+        "insider_drift_false_positive_rate": float(
+            np.mean(alerted[insider_drift]) if np.any(insider_drift) else 0.0),
         "scenario_detection": grouped_recall(alerted, y, scenarios),
         "attacked_entity_recall": len(alerted_attacked_entities) / max(len(attacked_entities), 1),
         "priority_threshold": bundle.priority_threshold,
@@ -257,7 +261,8 @@ def classifier_metrics(classifier: AttackClassifier, x: np.ndarray, y: np.ndarra
     predicted, _ = classifier.predict(x); probabilities = classifier.probabilities(x)
     malicious_indices = [index for index, name in enumerate(classifier.classes_) if name != "normal"]
     malicious = probabilities[:, malicious_indices].max(axis=1)
-    return {"macro_f1": float(f1_score(y, predicted, average="macro")),
+    return {"accuracy": float(accuracy_score(y, predicted)),
+            "macro_f1": float(f1_score(y, predicted, average="macro")),
             "malicious_pr_auc": float(average_precision_score(y != "normal", malicious))}
 
 
@@ -295,7 +300,7 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bootstrap_memory = MemoryProfiles()
     for row in sorted(raw_splits["train"], key=lambda item: item.event.timestamp):
-        bootstrap_memory.update(row.event, row.label)
+        bootstrap_memory.update(row.event, trusted=row.label == "normal")
     bootstrap_profiles = {}
     for key, profile in bootstrap_memory.profiles.items():
         if key.startswith("peer:") or key == "global:organization":
@@ -322,7 +327,8 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         "training_population": {"total_rows": int(len(y_train)), "normal_rows": int(np.sum(normal_mask)),
             "attack_rows": int(np.sum(~normal_mask)), "preprocessor_fit": "normal_only",
             "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_sequences_only",
-            "classifier_fit": "normal_and_attack", "classifier_probability_calibration": "validation_sigmoid"},
+            "classifier_fit": "normal_and_attack", "classifier_probability_calibration": "validation_sigmoid",
+            "holdout_profile_policy": "training-seeded online profiles; validation/test labels never consulted"},
         "dataset": json.loads((data_dir / "processed" / "manifest.json").read_text())
             if (data_dir / "processed" / "manifest.json").exists() else {},
         "bootstrap_profiles": {"source": "normal_training_rows_only", "profile_count": len(bootstrap_profiles)},

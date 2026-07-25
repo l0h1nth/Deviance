@@ -8,7 +8,7 @@ from app.schemas.events import AccessEvent, LabeledEvent
 
 
 SCENARIOS = [
-    "mixed", "brute_force", "credential_misuse", "credential_stuffing", "lateral_movement",
+    "mixed", "brute_force", "credential_stuffing", "lateral_movement",
     "impossible_travel", "device_spoofing", "low_slow_exfiltration", "cold_start",
     "concept_drift", "insider_drift",
 ]
