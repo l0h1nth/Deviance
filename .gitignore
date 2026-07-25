@@ -10,6 +10,7 @@ frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
 data/*.db
+data/backups/
 data/models/*.joblib
 data/models/metrics.json
 data/raw/*.jsonl

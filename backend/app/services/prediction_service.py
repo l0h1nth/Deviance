@@ -115,7 +115,9 @@ class PredictionService:
         automatically_trusted = risk_data["risk_score"] <= self.settings.profile_update_max_risk and predicted == "normal"
         if trusted_override or automatically_trusted:
             event_record.trusted = True; device.trusted_event_count += 1; self.profiles.update_trusted(event)
-        drift_values = {**metadata["values"], "anomaly_score": inference["anomaly_score"],
+        drift_values = {**metadata["values"],
+                        "access_hour": event.timestamp.hour + event.timestamp.minute / 60,
+                        "anomaly_score": inference["anomaly_score"],
                         "sequence_anomaly_score": inference["sequence_anomaly_score"]}
         drift = DriftService(self.db).observe(event.entity_id, drift_values) if event_record.trusted else []
         self.db.commit()

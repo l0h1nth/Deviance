@@ -32,7 +32,7 @@ class DriftService:
 
     def observe(self, subject_id: str, values: dict[str, float]) -> list[DriftEventRecord]:
         detected = []
-        monitored = ["login_hour_deviation", "location_novelty_score", "new_device_score",
+        monitored = ["access_hour", "location_novelty_score", "new_device_score",
                      "download_volume_zscore", "resource_novelty_score", "privilege_expansion_score",
                      "sequence_anomaly_score", "anomaly_score"]
         for feature in monitored:

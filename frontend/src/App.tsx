@@ -1,5 +1,5 @@
 import {Bell,BrainCircuit,ChevronDown,ChevronsLeft,ChevronsRight,CircleHelp,GitCompareArrows,LayoutDashboard,LogOut,Moon,ShieldCheck,Sun,Users} from 'lucide-react';
-import {useCallback,useEffect,useMemo,useState} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {api,authToken,type AuthUser} from './services/api';
 import type {Alert,AlertDetail,AppNotification,DriftResponse,LiveEvent,Metrics,Page} from './types';
 import {Overview} from './pages/Overview';import {Alerts} from './pages/Alerts';import {Investigation} from './pages/Investigation';import {ModelPage} from './pages/Model';import {DriftPage} from './pages/Drift';import {UsersPage} from './pages/Users';import {Login} from './pages/Login';
@@ -17,12 +17,14 @@ export default function App(){
   const[theme,setTheme]=useState<Theme>(()=>(localStorage.getItem('deviance-clean-theme') as Theme)||'light'),[user,setUser]=useState<AuthUser|null>(null),[authReady,setAuthReady]=useState(false);
   const[collapsed,setCollapsed]=useState(()=>localStorage.getItem(COLLAPSE_KEY)==='true'),[helpOpen,setHelpOpen]=useState(false),[notificationsOpen,setNotificationsOpen]=useState(false),[modelOpen,setModelOpen]=useState(false),[selectedUser,setSelectedUser]=useState<string>();
   const[readIds,setReadIds]=useState<Set<string>>(()=>{try{return new Set(JSON.parse(localStorage.getItem(READ_KEY)||'[]'))}catch{return new Set()}});
-  const load=useCallback(()=>{api.metrics().then(setMetrics).catch(()=>{});api.alerts().then(setAlerts).catch(()=>{});api.drift().then(setDrift).catch(()=>{});api.notifications().then(result=>setNotifications(result.notifications)).catch(()=>{});api.modelStatus().then(setModelStatus).catch(()=>{})},[]);
+  const refreshGeneration=useRef(0);
+  const refreshRuntime=useCallback(async()=>{const generation=++refreshGeneration.current;const[metricResult,alertResult,driftResult]=await Promise.allSettled([api.metrics(),api.alerts(),api.drift()]);if(generation!==refreshGeneration.current)return;if(metricResult.status==='fulfilled')setMetrics(metricResult.value);if(alertResult.status==='fulfilled')setAlerts(alertResult.value);if(driftResult.status==='fulfilled')setDrift(driftResult.value)},[]);
+  const load=useCallback(()=>{void refreshRuntime();api.notifications().then(result=>setNotifications(result.notifications)).catch(()=>{});api.modelStatus().then(setModelStatus).catch(()=>{})},[refreshRuntime]);
   useEffect(()=>{if(!authToken()){queueMicrotask(()=>setAuthReady(true));return}api.me().then(setUser).catch(()=>api.logout()).finally(()=>setAuthReady(true))},[]);
   useEffect(()=>{if(user){load();api.model().then(setModel).catch(()=>{});api.events().then(setLiveEvents).catch(()=>{})}},[load,user]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('deviance-clean-theme',theme)},[theme]);
   useEffect(()=>localStorage.setItem(COLLAPSE_KEY,String(collapsed)),[collapsed]);
-  const onStream=useCallback((message:StreamMessage)=>{if(message.type==='scored_event'){setLiveEvents(current=>[message.data,...current.filter(item=>item.event_id!==message.data.event_id)].slice(0,250));load()}else if(message.type==='simulation_status'){api.notifications().then(result=>setNotifications(result.notifications)).catch(()=>{})}},[load]);
+  const onStream=useCallback((message:StreamMessage)=>{if(message.type==='scored_event'){setLiveEvents(current=>[message.data,...current.filter(item=>item.event_id!==message.data.event_id)].slice(0,250));void refreshRuntime()}else if(message.type==='simulation_status'){api.notifications().then(result=>setNotifications(result.notifications)).catch(()=>{});if(['completed','stopped','failed'].includes(message.data?.status))void refreshRuntime()}},[refreshRuntime]);
   const onStreamState=useCallback((state:StreamState)=>setConnection(state),[]);
   useLive(onStream,onStreamState,!!user);
   const select=useCallback((alert:Alert)=>{setPage('investigation');setDetail(null);api.alert(alert.id).then(setDetail)},[]);

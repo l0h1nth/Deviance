@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.database.models import AlertRecord, EventRecord, PredictionRecord
 from app.database.session import get_db
 from app.ml.model_bundle import ModelBundle
+from app.schemas.events import REQUIRED_ATTACK_TYPES
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -30,8 +31,14 @@ def overview(db: Session = Depends(get_db)):
     false_positive_24h = db.scalar(select(func.count(AlertRecord.id)).where(
         AlertRecord.updated_at >= since, AlertRecord.status == "false_positive")) or 0
     avg_latency = db.scalar(select(func.avg(PredictionRecord.latency_ms))) or 0
-    attacks = dict(db.execute(select(PredictionRecord.predicted_attack, func.count(AlertRecord.id)).join(
-        AlertRecord, AlertRecord.prediction_id == PredictionRecord.id).group_by(PredictionRecord.predicted_attack)).all())
+    # Count correlated detection events, not only incident rows. Repeated events in
+    # the same 15-minute incident must visibly advance the dashboard counter.
+    attack_rows = db.execute(select(PredictionRecord.predicted_attack, func.sum(AlertRecord.event_count)).join(
+        AlertRecord, AlertRecord.prediction_id == PredictionRecord.id).group_by(PredictionRecord.predicted_attack)).all()
+    attacks = {name: 0 for name in REQUIRED_ATTACK_TYPES}
+    for name, count in attack_rows:
+        if name in attacks:
+            attacks[name] = int(count or 0)
     trend_rows = list(db.scalars(select(PredictionRecord).order_by(desc(PredictionRecord.id)).limit(50)))
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
     holdout = bundle.metrics.get("test", {}); budget = holdout.get("top_1_percent", {})

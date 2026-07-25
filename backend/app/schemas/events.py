@@ -4,6 +4,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+REQUIRED_ATTACK_TYPES = (
+    "brute_force", "credential_stuffing", "lateral_movement",
+    "impossible_travel", "device_spoofing", "low_slow_exfiltration",
+)
+
 AttackLabel = Literal[
     "normal", "brute_force", "credential_stuffing",
     "lateral_movement", "impossible_travel", "device_spoofing", "low_slow_exfiltration",

@@ -64,7 +64,8 @@ def test_metrics_consistency_enriched_alert_and_feedback():
         metrics = client.get("/api/metrics/overview", headers=headers).json()
         assert metrics["total_alerts"] == len(alerts)
         assert metrics["unresolved_alerts"] == sum(row["status"] in {"open", "investigating", "confirmed_threat"} for row in alerts)
-        assert sum(metrics["attacks_by_type"].values()) == metrics["total_alerts"]
+        assert sum(metrics["attacks_by_type"].values()) == sum(row["incident_event_count"] for row in alerts)
+        assert "unknown_anomaly" not in metrics["attacks_by_type"]
         detail = client.get(f"/api/alerts/{latest['alert_id']}", headers=headers).json()
         assert len(detail["feature_evidence"]) == 32 and detail["risk_composition"]
         assert "sequence_anomaly_score" in detail and "incident_event_count" in detail
@@ -82,9 +83,25 @@ def test_drift_window_progress_is_trusted_only(tmp_path):
     from app.database.session import Base
     engine = create_engine(f"sqlite:///{tmp_path/'progress.db'}"); Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)(); DriftService._windows.clear(); service = DriftService(db)
-    values = {"login_hour_deviation": 0, "location_novelty_score": 0, "new_device_score": 0,
+    values = {"access_hour": 9, "location_novelty_score": 0, "new_device_score": 0,
               "download_volume_zscore": 0, "session_duration_zscore": 0, "anomaly_score": 0}
     for _ in range(12): service.observe("trusted-user", values)
     status = DriftService.window_status()[0]
     assert status["reference_window"]["count"] == 12 and status["current_window"]["count"] == 0
     assert status["trusted_events_only"] is True
+
+
+def test_access_hour_shift_creates_drift_record(tmp_path):
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from app.database.models import DriftEventRecord
+    from app.database.session import Base
+    engine = create_engine(f"sqlite:///{tmp_path/'hour-drift.db'}"); Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)(); DriftService._windows.clear(); service = DriftService(db)
+    stable = {"access_hour": 9.0}
+    shifted = {"access_hour": 19.0}
+    for _ in range(20): service.observe("shift-user", stable)
+    for _ in range(20): service.observe("shift-user", shifted)
+    db.commit()
+    records = list(db.scalars(select(DriftEventRecord)))
+    assert any(record.feature == "access_hour" and record.magnitude >= 2.5 for record in records)

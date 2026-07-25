@@ -92,6 +92,14 @@ Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` before any non-demo
 
 Available scenarios are `mixed`, `brute_force`, `credential_stuffing`, `lateral_movement`, `impossible_travel`, `device_spoofing`, `low_slow_exfiltration`, `cold_start`, `concept_drift`, and `insider_drift`.
 
+## Test live counters and drift monitoring
+
+1. Restart the backend and frontend, sign in, and confirm the fresh dashboard begins at zero events and detections.
+2. Run `brute_force` with 8 or more events at 500 ms. **Detections by attack class** counts detected events, so Brute Force should advance once per alert-worthy event even when they correlate into one incident.
+3. Run `concept_drift` with exactly 40 events at 500 ms. The first 20 trusted events establish the reference access-hour window; the next 20 shift from approximately 09:00 to 19:00.
+4. Open **Drift monitor**. During the run it shows reference/current window progress; at completion it should show an `access hour` drift record with the previous and current distributions.
+5. Use `insider_drift` separately as the legitimate edge-case/false-positive demonstration. It is not an attack classifier output and is not the deterministic concept-drift trigger.
+
 ## Example production-shaped event
 
 `timestamp` must contain a timezone and may not be over five minutes in the future. There is intentionally no label.
