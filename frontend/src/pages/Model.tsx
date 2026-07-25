@@ -1,5 +1,6 @@
 const percent=(value:any)=>typeof value==='number'?(value*100).toFixed(1)+'%':'—';
 const number=(value:any,digits=1)=>typeof value==='number'?value.toFixed(digits):'—';
+const barWidth=(value:any)=>`${Math.max(0,Math.min(100,(typeof value==='number'?value:0)*100))}%`;
 
 export function ModelPage({model}:{model:any}){
   const metrics=model?.metrics||{},test=metrics.test||{},classes=test.classes||[],matrix=test.confusion_matrix||[];
@@ -8,6 +9,9 @@ export function ModelPage({model}:{model:any}){
   const scenario=test.scenario_detection||{},priority=test.priority_queue||{},cold=test.cold_start_evaluation||{};
   const coldOverall=cold.overall||{},coldBuckets=cold.by_history_bucket||{},coldAttack=cold.attack_challenge||{};
   const coldClasses=coldAttack.by_attack_class||{};
+  const coldFalsePositives=Math.round((coldOverall.normal_count||0)*(coldOverall.benign_false_positive_rate||0));
+  const coldCaught=Math.round((coldAttack.event_count||0)*(coldAttack.attack_recall||0));
+  const coldScenarios=Math.round((coldAttack.scenario_count||0)*(coldAttack.scenario_recall||0));
   const cards=[
     ['Classifier accuracy',test.classifier_accuracy,'Correct multiclass predictions divided by all holdout events. Read with Macro F1 because normal events dominate.'],
     ['Classifier Macro F1',test.macro_f1,'Unweighted event-level classification F1 across normal and the six required attack classes.'],
@@ -22,16 +26,21 @@ export function ModelPage({model}:{model:any}){
     <header className="page-head"><div><span className="eyebrow">MODEL GOVERNANCE</span><h1>Performance</h1><p>Entity-disjoint chronological evaluation with normal-only anomaly learning, a held-out classifier choice, and two analyst thresholds.</p></div></header>
     <section className="stats model-stats">{cards.map(([name,value,help])=><article className="metric" key={String(name)} title={String(help)}><span>{name}</span><strong>{percent(value)}</strong><small>{help}</small></article>)}</section>
 
-    <section className="panel model-card"><div className="panel-title"><div><span>COLD-START SAFETY</span><h2>Performance before personal-profile maturity</h2></div><strong>{coldOverall.sample_count??'—'} holdout events</strong></div><dl className="budget-grid">
-      <div><dt>Benign cold-start FPR</dt><dd>{percent(coldOverall.benign_false_positive_rate)}</dd></div>
-      <div><dt>Cold-start attack recall</dt><dd>{percent(coldAttack.attack_recall)}</dd></div>
-      <div><dt>Cold-start scenario recall</dt><dd>{percent(coldAttack.scenario_recall)}</dd></div>
-      <div><dt>Behavior-only attack recall</dt><dd>{percent(coldAttack.behavioral_attack_recall)}</dd></div>
-      <div><dt>Normal support</dt><dd>{coldOverall.normal_count??'—'}</dd></div>
-      <div><dt>Attack challenge support</dt><dd>{coldAttack.event_count??'—'} events · {coldAttack.scenario_count??'—'} scenarios</dd></div>
-      <div><dt>Maturity boundary</dt><dd>{cold.maturity_threshold??12} prior events</dd></div>
-      <div><dt>Evaluation policy</dt><dd>{cold.profile_update_policy||'Chronological holdout profile updates'}</dd></div>
-    </dl>{Object.keys(coldBuckets).length>0&&<><h3>Profile maturity buckets</h3><div className="class-report"><div className="class-report-head"><b>Prior history</b><span>Support</span><span>Benign FPR</span><span>Attack recall</span></div>{Object.entries(coldBuckets).map(([name,value]:any)=><div key={name}><b>{name} events</b><span>{value.sample_count} total · {value.attack_count} attacks</span><span>{percent(value.benign_false_positive_rate)}</span><span>{percent(value.attack_recall)}</span></div>)}</div></>}{Object.keys(coldClasses).length>0&&<><h3>Fresh-identity attack challenge</h3><div className="class-report"><div className="class-report-head"><b>Attack class</b><span>Event support</span><span>Event recall</span><span>Scenario recall</span></div>{Object.entries(coldClasses).map(([name,value]:any)=><div key={name}><b>{name.replaceAll('_',' ')}</b><span>{value.event_support} events · {value.scenario_support} scenarios</span><span>{percent(value.event_recall)}</span><span>{percent(value.scenario_recall)}</span></div>)}</div></>}</section>
+    <section className="panel cold-start-card">
+      <header className="cold-start-head"><div><span className="eyebrow">COLD-START SAFETY</span><h2>New identities, measured honestly</h2><p>Peer and global behavior protect an entity until its personal profile becomes mature.</p></div><span className="cold-start-badge"><i/>Fallback active · &lt; {cold.maturity_threshold??12} events</span></header>
+      <div className="cold-kpi-grid">
+        <article className="safe"><span>Benign FPR</span><strong>{percent(coldOverall.benign_false_positive_rate)}</strong><small>{coldFalsePositives} of {coldOverall.normal_count??'—'} normal events alerted</small></article>
+        <article><span>Attack recall</span><strong>{percent(coldAttack.attack_recall)}</strong><small>{coldCaught} of {coldAttack.event_count??'—'} fresh-identity attacks surfaced</small></article>
+        <article><span>Scenario coverage</span><strong>{percent(coldAttack.scenario_recall)}</strong><small>{coldScenarios} of {coldAttack.scenario_count??'—'} complete scenarios found</small></article>
+        <article><span>Behavior only</span><strong>{percent(coldAttack.behavioral_attack_recall)}</strong><small>IF + GRU + profile deviation, no classifier</small></article>
+      </div>
+      <div className="cold-context-strip"><span><b>{cold.maturity_threshold??12}</b> trusted events to mature</span><span><b>Peer → global</b> fallback order</span><span><b>3 events</b> before GRU activates</span><span><b>{coldOverall.sample_count??'—'}</b> chronological holdout events</span></div>
+      <div className="cold-detail-grid">
+        <article className="cold-subcard"><header><div><span>PROFILE MATURITY</span><h3>Benign alert pressure</h3></div><small>Lower is better</small></header><div className="maturity-list">{Object.entries(coldBuckets).map(([name,value]:any)=><div key={name}><span><i className={value.benign_false_positive_rate<=.01?'good':'warn'}/><b>{name} prior events</b><small>{value.normal_count} normal samples</small></span><strong>{percent(value.benign_false_positive_rate)}<small>FPR</small></strong></div>)}</div></article>
+        <article className="cold-subcard"><header><div><span>FRESH-IDENTITY CHALLENGE</span><h3>Coverage by attack class</h3></div><small>Event recall · scenario recall</small></header><div className="cold-coverage-list">{Object.entries(coldClasses).map(([name,value]:any)=><div key={name}><div><span><b>{name.replaceAll('_',' ')}</b><small>{value.event_support} events · {value.scenario_support} scenarios</small></span><strong>{percent(value.event_recall)} <small>{percent(value.scenario_recall)} scenarios</small></strong></div><span className="coverage-track"><i style={{width:barWidth(value.event_recall)}} className={value.event_recall>=.8?'good':value.event_recall>=.5?'warn':'weak'}/></span></div>)}</div></article>
+      </div>
+      <footer className="cold-method-note"><span>Evaluation contract</span><p>Unseen identities use training-only peer/global priors. Attack challenge events never update their own profiles.</p></footer>
+    </section>
 
     <section className="panel model-card"><h2>Active v3 ensemble</h2><dl>
       <div><dt>Model version</dt><dd>{model?.model_version||'Not trained'}</dd></div>
