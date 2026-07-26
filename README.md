@@ -4,7 +4,43 @@ Deviance is an AI-powered behavioral anomaly detection system for users, service
 
 It implements the full hackathon brief: synthetic behavioral data, extreme class imbalance, sequential detection, brute force, credential stuffing, lateral movement, impossible travel, device spoofing, low-and-slow exfiltration, cold start, concept/insider drift, explainability, scalability evidence, and an analyst dashboard.
 
-## Architecture at a glance
+## Watch the working prototype
+
+[▶ Watch the narrated 1 minute 54 second Deviance demonstration](docs/demo/deviance-demo-ai-voiceover.mp4)
+
+The recording follows a real application session: administrator login, live synthetic telemetry, dashboard updates, 32-feature evidence, risk-ranked detections, alert investigation, raw validated telemetry, identity-risk ranking, independent audit metrics, and analyst-gated concept drift. The video contains an American English AI narration synchronized to the visible workflow.
+
+## Complete processing pipeline
+
+![Deviance processing pipeline showing offline training, near-real-time detection, and durable behavioral history](docs/images/deviance-processing-pipeline.png)
+
+The diagram contains three connected paths:
+
+1. **Offline model build:** the generator creates realistic entity habits and injects controlled scenarios. Labels are retained in sidecars for classifier training and evaluation, but the scaler, Isolation Forests, and GRUs learn from normal events only. Strict entity and time partitions lead to a frozen artifact and an independent audit.
+2. **Near-real-time event path:** unlabeled login, API, and device telemetry passes authentication, schema validation, duplicate protection, behavioral-profile lookup, and 32-feature extraction. Four domain Isolation Forests, a 12-event GRU, and the Random Forest score the event in parallel. Their evidence becomes an explained risk score, a required attack type, a durable incident, and a live SOC update.
+3. **Durable behavioral history:** only trusted low-risk outcomes may update behavior. The concept-drift monitor compares trusted reference and current windows behind an analyst approval gate. Separately, daily 42-value summaries feed the 30-day `EntityBehaviorGRU`, which ranks identities for review without automatically blocking them.
+
+## How one telemetry event becomes an alert
+
+1. **Ingest:** FastAPI accepts a production-shaped event with no attack label and rejects unauthenticated, invalid, future-dated, or duplicate input.
+2. **Add behavioral context:** the service loads durable sequence history and selects the best available entity, device, peer, or global baseline. This fallback allows a new identity to be scored before its personal profile matures.
+3. **Engineer 32 features:** raw fields become behavioral signals covering short authentication windows, time and location, device/IP novelty, resource breadth, privileges, ordered actions, protocols, entropy, and transfer volume.
+4. **Score in parallel:** Isolation Forests measure point novelty, the event GRU measures sequence novelty across a sliding 12-event window, and Random Forest estimates the closest required attack category.
+5. **Explain and decide:** the risk layer combines model evidence, profile deviation, and resource criticality against a frozen operational threshold. Explanations preserve observed values, expected behavior, and each component's contribution.
+6. **Persist and broadcast:** one transaction stores the event, features, prediction, and correlated incident. Authenticated server-sent events update the React dashboard immediately.
+7. **Use analyst feedback safely:** dispositions are auditable. Confirmed or attack-like activity cannot silently update the normal baseline; legitimate drift requires review.
+
+## What each model contributes
+
+| Component | Training data | Runtime input | Output and role |
+|---|---|---|---|
+| Global and four Domain Isolation Forests | Normal events only | Relevant subsets of the 32-feature event vector | Point-anomaly evidence across authentication, identity/device, access/network, and volume domains |
+| Event GRU | Normal event sequences only | Sliding window of 12 ordered 32-feature vectors | Sequence residual indicating that the current progression no longer resembles normal behavior |
+| Random Forest classifier | Labeled normal events and the six required scenarios | Current 32-feature event vector | Calibrated probabilities for brute force, credential stuffing, impossible travel, lateral movement, device spoofing, and low-and-slow exfiltration |
+| `EntityBehaviorGRU` | Normal daily sequences with entity-disjoint out-of-fold classifier evidence | Sliding 30-day window of 42 values: 32 features, four IF scores, and six RF probabilities | Next-day residuals and persistence evidence used to rank gradually drifting identities |
+| Concept-drift monitor | Trusted low-risk history | 20-event reference and 20-event current windows | Effect-size and KS evidence presented for analyst-approved baseline adaptation |
+
+## Technical safeguards and contracts
 
 - Production telemetry has no label. Ground truth exists only in offline `*_labels.jsonl` sidecars.
 - The scaler, one global Isolation Forest, four signal-domain Isolation Forests, bundled cold-start profile priors, and both GRU sequence detectors learn only normal events.
@@ -20,49 +56,6 @@ It implements the full hackathon brief: synthetic behavioral data, extreme class
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [MODEL_EVALUATION.md](MODEL_EVALUATION.md), and [SUBMISSION_REPORT.md](SUBMISSION_REPORT.md).
 
-## Complete project pipeline
-
-```text
-OFFLINE
-Synthetic entity habits + injected scenarios
-                 │
-       unlabeled events + label sidecars
-                 │
- entity-disjoint strict chronological train → validation → test → audit
-                 │
- normal-only scaler / IF / GRUs  +  labeled RF/XGBoost comparison
-                 │
- frozen, versioned model bundle + untouched audit metrics
-
-LIVE
-Login / API / device telemetry
-                 │
-      authenticated HTTP + schema validation + event-id idempotency
-                 │
-     entity_id partition key ── preserves per-identity order
-                 │
- durable profile + sequence history ── entity/device/peer/global cold-start fallback
-                 │
-              32 features
-       ┌─────────┼───────────┐
-       ▼         ▼           ▼
-  Domain IF   Event GRU   Random Forest
-       └─────────┼───────────┘
-                 ▼
- weighted risk + attack class + explanation
-                 │
-   one transaction: event + features + prediction + correlated alert
-                 │
-       authenticated SSE → React SOC dashboard
-                 │
-       analyst disposition → trusted profile update
-
-LONG-TERM
-Trusted events → durable 20/20 concept-drift windows → analyst-approved adaptation
-32 features + 4 IF scores + 6 RF probabilities → daily 42-vector
-→ 30-day EntityBehaviorGRU → ranked identity-risk list
-```
-
 ## Repository layout
 
 ```text
@@ -77,7 +70,10 @@ Deviance/
 ├── backend/tests/
 ├── frontend/src/     # React analyst workspace
 ├── data/             # generated corpus, artifacts, and local SQLite DB
-├── docs/PRESENTATION.md
+├── docs/
+│   ├── demo/         # narrated working-prototype video
+│   ├── images/       # architecture and pipeline visuals
+│   └── PRESENTATION.md
 └── Deviance_Learning_Guide/ (sibling folder)
 ```
 
