@@ -7,23 +7,17 @@ export function ModelPage({model}:{model:any}){
   const selection=metrics.threshold_selection||{},behaviorSelection=metrics.behavioral_threshold_selection||{};
   const population=metrics.training_population||{},classifierSelection=metrics.classifier_selection||{};
   const sequenceComparison=metrics.event_sequence_comparison||{},entityBehavior=metrics.entity_behavior?.audit||metrics.entity_behavior?.test||{};
-  const priority=test.priority_queue||{},topOne=test.top_1_percent||priority,cold=test.cold_start_evaluation||{};
-  const normalSupport=test.classification_report?.normal?.support||0;
-  const topOneFpr=typeof topOne.false_positive_rate==='number'?topOne.false_positive_rate:(topOne.false_positives||0)/Math.max(normalSupport,1);
+  const priority=test.priority_queue||{},cold=test.cold_start_evaluation||{};
   const coldOverall=cold.overall||{},coldBuckets=cold.by_history_bucket||{},coldAttack=cold.attack_challenge||{};
   const coldClasses=coldAttack.by_attack_class||{};
   const coldFalsePositives=Math.round((coldOverall.normal_count||0)*(coldOverall.benign_false_positive_rate||0));
   const coldCaught=Math.round((coldAttack.event_count||0)*(coldAttack.attack_recall||0));
   const coldScenarios=Math.round((coldAttack.scenario_count||0)*(coldAttack.scenario_recall||0));
   const cards:[string,any,string,number?][]=[
-    ['Detection accuracy',test.classifier_accuracy,'Correct predictions on the entity-disjoint imbalanced holdout. Read with attack-type Macro F1 because normal events dominate.'],
     ['Attack-type Macro F1',test.macro_f1,'Unweighted classification quality across normal and all six required anomaly types.'],
     ['Finding precision',test.alert_precision,'True attack events divided by all events surfaced at the operational finding threshold.'],
     ['Finding recall',test.alert_recall,'Attack events surfaced at the recall-oriented operational finding threshold.'],
     ['Finding false-positive rate',test.alert_false_positive_rate,'Normal holdout events incorrectly surfaced at the operational finding threshold.',2],
-    ['Top 1% precision',topOne.precision,'Attack precision among the highest-risk one percent of holdout events.'],
-    ['Top 1% recall',topOne.recall,'Share of all holdout attack events captured within the one-percent analyst budget.'],
-    ['Top 1% false-positive rate',topOneFpr,'Normal holdout events incorrectly included in the highest-risk one-percent analyst queue.',2],
   ];
   return <>
     <header className="page-head"><div><span className="eyebrow">MODEL GOVERNANCE</span><h1>Performance</h1><p>Independent-seed, entity-disjoint chronological audit after normal-only anomaly learning and frozen validation thresholds.</p></div></header>
