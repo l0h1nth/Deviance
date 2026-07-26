@@ -17,11 +17,14 @@ class GRUSequenceDetector:
 
     def __init__(self, input_size: int, hidden_size: int = 32, window_size: int = 12,
                  ridge: float = 1e-3, error_top_k: int = 5, random_state: int = 42,
-                 feature_indices: list[int] | np.ndarray | None = None):
+                 feature_indices: list[int] | np.ndarray | None = None, minimum_history: int = 3,
+                 normalization: str = "linear_clip"):
         self.source_input_size = input_size
         self.feature_indices = np.asarray(feature_indices if feature_indices is not None else np.arange(input_size), dtype=int)
         self.input_size, self.hidden_size, self.window_size = len(self.feature_indices), hidden_size, window_size
         self.ridge, self.error_top_k, self.random_state = ridge, error_top_k, random_state
+        self.minimum_history = minimum_history
+        self.normalization = normalization
         rng = np.random.default_rng(random_state); x_scale = 1 / np.sqrt(max(self.input_size, 1)); h_scale = 1 / np.sqrt(hidden_size)
         self.wz = rng.normal(0, x_scale, (self.input_size, hidden_size)); self.uz = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.bz = np.zeros(hidden_size)
         self.wr = rng.normal(0, x_scale, (self.input_size, hidden_size)); self.ur = rng.normal(0, h_scale, (hidden_size, hidden_size)); self.br = np.zeros(hidden_size)
@@ -71,13 +74,17 @@ class GRUSequenceDetector:
         return self
 
     def _normalize(self, errors: np.ndarray) -> np.ndarray:
-        return np.clip((errors - self.error_low) / max(self.error_high - self.error_low, 1e-9), 0, 1)
+        relative = np.maximum(0, (errors - self.error_low) / max(self.error_high - self.error_low, 1e-9))
+        if getattr(self, "normalization", "linear_clip") == "bounded_exp":
+            return 1 - np.exp(-relative)
+        return np.clip(relative, 0, 1)
 
     def score_one(self, previous_scaled: np.ndarray, current_scaled: np.ndarray) -> float:
         # A sequence model cannot make a defensible temporal judgment during cold start.
         # The peer/global tabular baseline still scores those events; sequence evidence is
         # activated only after three preceding events are available for this entity.
-        if len(previous_scaled) < 3:
+        minimum_history = getattr(self, "minimum_history", 3)
+        if len(previous_scaled) < minimum_history:
             return 0.0
         previous_scaled = self._select(previous_scaled); current_scaled = self._select(current_scaled)
         prediction = self._predict(previous_scaled)
@@ -88,7 +95,8 @@ class GRUSequenceDetector:
         histories: dict[str, deque] = defaultdict(lambda: deque(maxlen=self.window_size)); errors = []
         for vector, entity in zip(scaled, entities):
             history = histories[str(entity)]
-            errors.append(None if len(history) < 3 else self._error(self._predict(list(history)), vector))
+            minimum_history = getattr(self, "minimum_history", 3)
+            errors.append(None if len(history) < minimum_history else self._error(self._predict(list(history)), vector))
             history.append(vector)
         numeric = np.asarray([self.error_low if value is None else value for value in errors])
         scores = self._normalize(numeric); scores[[value is None for value in errors]] = 0.0
@@ -98,4 +106,6 @@ class GRUSequenceDetector:
         return {"type": "GRUSequenceDetector", "hidden_size": self.hidden_size, "window_size": self.window_size,
                 "error_top_k": self.error_top_k, "source_input_size": self.source_input_size,
                 "input_size": self.input_size, "feature_indices": self.feature_indices.tolist(),
+                "minimum_history": getattr(self, "minimum_history", 3),
+                "normalization": getattr(self, "normalization", "linear_clip"),
                 "training": "normal_sequences_only", "implementation": "gated_recurrent_reservoir_ridge_decoder"}

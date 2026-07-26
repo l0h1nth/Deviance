@@ -1,4 +1,4 @@
-import type {Alert,AlertDetail,AppNotification,DriftResponse,DriftReviewAction,LiveEvent,Metrics,SimulationStatus} from '../types';
+import type {Alert,AlertDetail,AppNotification,BehaviorRankings,DriftResponse,DriftReviewAction,LiveEvent,Metrics,SimulationStatus} from '../types';
 
 const BASE=import.meta.env.VITE_API_URL||'/api';
 const TOKEN_KEY='deviance-admin-token';
@@ -19,6 +19,7 @@ export const api={
   metrics:()=>request<Metrics>('/metrics/overview'),alerts:()=>request<Alert[]>('/alerts?limit=500'),alert:(id:number)=>request<AlertDetail>(`/alerts/${id}`),
   events:(limit=100)=>request<LiveEvent[]>(`/events?limit=${limit}`),latestEvent:()=>request<LiveEvent|null>('/events/latest'),
   model:()=>request<any>('/metrics/model'),modelStatus:()=>request<any>('/models/status'),drift:()=>request<DriftResponse>('/drift'),
+  behaviorRankings:()=>request<BehaviorRankings>('/behavior/rankings'),behaviorEntity:(id:string)=>request<any>(`/behavior/entities/${encodeURIComponent(id)}`),
   reviewDrift:(id:number,action:DriftReviewAction,comment='')=>request(`/drift/${id}`,{method:'PATCH',body:JSON.stringify({action,comment})}),
   users:(search='')=>request<any[]>(`/users?search=${encodeURIComponent(search)}&limit=20`),
   profile:(id:string)=>request<any>(`/users/${id}/profile`),timeline:(id:string)=>request<any[]>(`/users/${id}/timeline?limit=20`),

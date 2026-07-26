@@ -7,9 +7,10 @@ It implements the full hackathon brief: synthetic behavioral data, extreme class
 ## Architecture at a glance
 
 - Production telemetry has no label. Ground truth exists only in offline `*_labels.jsonl` sidecars.
-- The scaler, one global Isolation Forest, four signal-domain Isolation Forests, bundled cold-start profile priors, and GRU sequence detector learn only normal events.
+- The scaler, one global Isolation Forest, four signal-domain Isolation Forests, bundled cold-start profile priors, and both GRU sequence detectors learn only normal events.
 - Random Forest and XGBoost candidates learn normal plus the six required labeled attack types. A dedicated validation partition selects the stronger candidate, and separate validation data calibrates its probabilities.
-- Thirty-two behavioral features cover API/authentication windows, 30-day history, identity/device novelty, IP fan-out, travel, actions, ordered commands, entropy, privilege expansion, protocols, and cumulative transfers.
+- Thirty-two behavioral features cover API/authentication windows, 30-day history, identity/device novelty, IP fan-out, travel, actions, ordered commands, entropy, privilege expansion, protocols, and cumulative transfers. The event and daily GRUs receive those 32 plus four Isolation Forest domain scores and six calibrated classifier probabilities: 42 inputs total.
+- The event GRU uses a sliding 12-event window. A separate `EntityBehaviorGRU` aggregates the 42 inputs by entity/day, uses a sliding 30-day window to forecast the next day, and ranks identities by maximum drift, persistent drift days, top-three drift, and recency.
 - Risk combines 30% domain/global anomaly evidence, 5% GRU sequence novelty, 25% classifier evidence, 35% profile deviation, and 5% resource criticality.
 - Behavioral anomalies are assigned to the closest required attack class while retaining honest classifier confidence; no extra classifier class is introduced.
 - A recall-oriented finding threshold is constrained by validation false positives; a second frozen threshold reserves the highest-risk one percent for priority triage.
@@ -25,7 +26,7 @@ Deviance/
 ├── backend/app/
 │   ├── api/          # authenticated FastAPI routes
 │   ├── database/     # event, prediction, incident, feedback, drift tables
-│   ├── ml/           # 32 features, domain IFs, GRU, RF/XGBoost selection
+│   ├── ml/           # 32 features, 42-input event/daily GRUs, domain IFs, classifier selection
 │   ├── services/     # inference, profiles, risk, explanations, SSE, drift
 │   └── synthetic/    # entities, normal behavior, injected scenarios
 ├── backend/scripts/  # generate, train, evaluate, benchmark, simulate
@@ -109,6 +110,8 @@ Run the deterministic Phase 2 benchmark with:
 ```
 
 The benchmark reports entity-level drift precision/recall, stable-entity false-positive rate, detection delay, and the enforced adaptation safety contract. See [Phase 2 concept drift](docs/PHASE2_CONCEPT_DRIFT.md) for the complete lifecycle.
+
+The experimental daily behavioral-risk path and its held-out comparison are documented in [Behavioral drift experiment](docs/BEHAVIORAL_DRIFT_EXPERIMENT.md).
 
 ## Example production-shaped event
 
@@ -202,7 +205,9 @@ npm run build
 
 ## Current honest evaluation
 
-The seed-42 test split contains 11,036 events from 60 unseen entities with 2.14% attack events from scenarios injected at roughly 1% of sessions. Classifier accuracy is 99.72%, but the more informative Macro F1 is 93.46% because an always-normal prediction already achieves 97.86% accuracy. The operational layer reaches 93.98% precision and 86.02% recall at a 0.12% normal-event false-positive rate. Normal-only behavioral evidence reaches 80.67% PR-AUC and 73.73% recall. Insider-drift FPR is 0%, and all 38 attack scenarios have at least one surfaced event.
+The seed-42 test split contains 11,036 events from 60 unseen entities with 2.14% attack events from scenarios injected at roughly 1% of sessions. Classifier accuracy is 99.68%, but the more informative Macro F1 is 92.80% because an always-normal prediction already achieves 97.86% accuracy. On this branch the operational layer reaches 93.21% precision and 87.29% recall at a 0.14% normal-event false-positive rate. Normal-only behavioral evidence reaches 81.24% PR-AUC and 77.97% recall. The separate daily behavior path reaches 76.50% PR-AUC and 79.03% recall at a 0.97% normal-day FPR.
+
+The enriched event GRU alone is not a win: its PR-AUC is 43.96% versus 73.98% for the legacy event-GRU replay, even though ROC-AUC improves from 97.43% to 98.24%. This negative result is retained and reported rather than hidden; see the behavioral drift experiment for the full comparison.
 
 Validation selected Random Forest over XGBoost. All scores remain generator-dependent rather than production guarantees. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, confusion matrices, class support, candidate selection, and limitations.
 

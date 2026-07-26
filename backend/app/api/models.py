@@ -58,6 +58,9 @@ def status(db: Session = Depends(get_db)):
                       alert_threshold=bundle.alert_threshold, behavioral_threshold=bundle.behavioral_threshold,
                       priority_threshold=bundle.priority_threshold,
                       classifier=bundle.attack_classifier.model_metadata(),
+                      event_sequence=bundle.sequence_detector.model_metadata(),
+                      entity_behavior=(bundle.entity_behavior_detector.model_metadata()
+                                       if getattr(bundle, "entity_behavior_detector", None) else None),
                       last_trained_at=bundle.metrics.get("trained_at"), artifact_status="loaded",
                       average_inference_latency_ms=round(float(db.scalar(select(func.avg(PredictionRecord.latency_ms))) or 0), 2),
                       drift_state=DriftService(db).summary()["state"])

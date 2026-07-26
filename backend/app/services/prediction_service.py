@@ -89,7 +89,13 @@ class PredictionService:
                             "recommended_actions": RiskService.actions(predicted, risk_data["severity"]), "cold_start": cold_start,
                             "sequence_window": self.bundle.sequence_detector.window_size,
                             "behavioral_score": inference["behavioral_score"],
-                            "domain_anomaly_scores": inference["domain_anomaly_scores"]}
+                            "domain_anomaly_scores": inference["domain_anomaly_scores"],
+                            "model_evidence": {
+                                "if_domain_scores": inference["domain_anomaly_scores"],
+                                "rf_attack_probabilities": {name: value for name, value in inference["class_probabilities"].items()
+                                                            if name != "normal"},
+                            },
+                            "enriched_feature_count": len(inference["enriched_feature_names"])}
         prediction = PredictionRecord(event_db_id=event_record.id, features=metadata["values"],
             anomaly_score=inference["anomaly_score"], sequence_anomaly_score=inference["sequence_anomaly_score"],
             predicted_attack=predicted, classifier_confidence=inference["classifier_confidence"],
@@ -129,6 +135,7 @@ class PredictionService:
             "anomaly_score": inference["anomaly_score"], "sequence_anomaly_score": inference["sequence_anomaly_score"],
             "behavioral_score": inference["behavioral_score"],
             "domain_anomaly_scores": inference["domain_anomaly_scores"],
+            "model_evidence": explanation_json["model_evidence"],
             "predicted_attack": predicted, "display_attack": display,
             "class_probabilities": inference["class_probabilities"], "classifier_confidence": inference["classifier_confidence"],
             "model_confidence": risk_data["model_confidence"], "baseline_confidence": baseline.confidence,

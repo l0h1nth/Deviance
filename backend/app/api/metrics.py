@@ -59,10 +59,15 @@ def overview(db: Session = Depends(get_db)):
 @router.get("/model")
 def model_metrics():
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
+    entity_detector = getattr(bundle, "entity_behavior_detector", None)
     return {"model_version": bundle.version, "feature_schema_version": bundle.feature_schema_version,
             "feature_names": bundle.feature_names, "alert_threshold": bundle.alert_threshold,
             "behavioral_threshold": bundle.behavioral_threshold, "priority_threshold": bundle.priority_threshold,
             "classifier": bundle.attack_classifier.model_metadata(),
             "classifier_candidates": bundle.classifier_candidates,
             "anomaly_model": bundle.anomaly_detector.model_metadata(),
-            "sequence_model": bundle.sequence_detector.model_metadata(), "metrics": bundle.metrics}
+            "sequence_model": bundle.sequence_detector.model_metadata(),
+            "enriched_feature_names": getattr(bundle, "enriched_feature_names", []),
+            "entity_behavior_model": entity_detector.model_metadata() if entity_detector else None,
+            "entity_behavior_threshold": getattr(bundle, "entity_behavior_threshold", None),
+            "metrics": bundle.metrics}

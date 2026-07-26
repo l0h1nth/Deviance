@@ -1,4 +1,4 @@
-export type Page='overview'|'alerts'|'model'|'drift'|'users'|'investigation';
+export type Page='overview'|'alerts'|'model'|'drift'|'behavior'|'users'|'investigation';
 
 export type Alert = {
   id:number;timestamp:string;entity_id:string;entity_type:string;user_id:string;device_id:string;predicted_attack:string;display_attack:string;
@@ -43,4 +43,6 @@ export type DriftEvent={id:number;subject_id:string;feature:string;magnitude:num
 export type DriftWindow={entity:string;reference_window:{count:number;target:number};current_window:{count:number;target:number};status:string;trusted_events_only:boolean;flagged_features:string[];baseline_version:number;last_observed_at:string|null};
 export type DriftSummary={state:string;pending_reviews:number;approved_adaptations:number;rejected_changes:number;monitored_entities:number;trusted_events:number;signals_monitored:number;reference_size:number;current_size:number;policy:string;automatic_retraining:boolean};
 export type DriftResponse={events:DriftEvent[];windows:DriftWindow[];summary?:DriftSummary};
+export type BehaviorRanking={rank:number;entity_id:string;rank_score:number;maximum_drift_30d:number;drift_days_30d:number;consecutive_drift_days:number;mean_top_3_drift:number;last_drift_date:string|null;latest_score:number;has_attack:boolean};
+export type BehaviorRankings={model_ready:boolean;model_version?:string;threshold:number;window_days:number;minimum_history_days?:number;daily_observations?:number;rankings:BehaviorRanking[]};
 export type AppNotification={id:string;type:string;title:string;message:string;created_at:string|null;page:Page;alert_id?:number};

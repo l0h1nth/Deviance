@@ -30,11 +30,20 @@ def test_training_pipeline(tmp_path):
     population=bundle.metrics["training_population"]
     assert population["normal_rows"]==int(normal_mask.sum())
     assert population["preprocessor_fit"]=="normal_only"
-    assert population["sequence_detector_fit"]=="normal_sequences_only"
+    assert population["sequence_detector_fit"]=="normal_42_feature_sequences_only"
+    assert population["entity_behavior_detector_fit"]=="normal_30_day_sequences_only"
     assert population["classifier_cold_start_attack_augmentation_rows"] > 0
     assert "0.10% normal-event FPR" in bundle.metrics["threshold_selection"]["selection_method"]
     assert bundle.attack_classifier.model_kind in {"random_forest", "xgboost"}
     assert bundle.anomaly_detector.model_metadata()["type"] == "DomainIsolationForestEnsemble"
+    assert bundle.sequence_detector.source_input_size == 42
+    assert bundle.sequence_detector.window_size == 12
+    assert bundle.entity_behavior_detector.source_input_size == 42
+    assert bundle.entity_behavior_detector.window_size == 30
+    assert len(bundle.enriched_feature_names) == 42
+    comparison = bundle.metrics["event_sequence_comparison"]
+    assert set(comparison) >= {"current_16_feature_gru", "enriched_42_feature_gru"}
+    assert "entity_behavior" in bundle.metrics
     test_metrics = bundle.metrics["test"]
     assert 0 <= test_metrics["classifier_accuracy"] <= 1
     assert "open_set_macro_f1" not in test_metrics

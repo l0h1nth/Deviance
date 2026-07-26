@@ -9,9 +9,12 @@ from time import perf_counter
 
 import numpy as np
 from sklearn.metrics import accuracy_score, average_precision_score, classification_report, confusion_matrix, f1_score, roc_auc_score
+from sklearn.model_selection import GroupKFold
 
 from app.ml.anomaly_model import IsolationForestDetector
 from app.ml.attack_classifier import AttackClassifier
+from app.ml.enriched_features import enrich_scaled, enriched_names
+from app.ml.entity_behavior import aggregate_daily, daily_evaluation, tune_daily_threshold
 from app.ml.feature_pipeline import FeaturePipeline
 from app.ml.feature_registry import FEATURE_SCHEMA_VERSION
 from app.ml.model_bundle import ModelBundle
@@ -111,9 +114,18 @@ def featurize_splits(splits: dict[str, list[LabeledEvent]]) -> dict[str, tuple[n
     return result
 
 
+def event_sequence_matrix(bundle: ModelBundle, scaled: np.ndarray) -> np.ndarray:
+    if getattr(bundle.sequence_detector, "source_input_size", scaled.shape[1]) <= scaled.shape[1]:
+        return scaled
+    enriched = enrich_scaled(scaled, bundle.anomaly_detector, bundle.attack_classifier)
+    sequence_scaler = getattr(bundle, "event_sequence_scaler", None)
+    return sequence_scaler.transform(enriched) if sequence_scaler is not None else enriched
+
+
 def score_components(bundle: ModelBundle, x: np.ndarray, entities: np.ndarray) -> tuple[np.ndarray, ...]:
     scaled = bundle.scaler.transform(x); anomaly = bundle.anomaly_detector.score(scaled)
-    sequence = bundle.sequence_detector.score_stream(scaled, entities)
+    sequence_input = event_sequence_matrix(bundle, scaled)
+    sequence = bundle.sequence_detector.score_stream(sequence_input, entities)
     probabilities = bundle.attack_classifier.probabilities(scaled)
     malicious_indices = [index for index, name in enumerate(bundle.attack_classifier.classes_) if name != "normal"]
     malicious = probabilities[:, malicious_indices].max(axis=1) if malicious_indices else np.zeros(len(x))
@@ -267,7 +279,9 @@ def evaluation_metrics(bundle: ModelBundle, x: np.ndarray, y: np.ndarray, entiti
                        scenarios: np.ndarray, criticality: np.ndarray, history_counts: np.ndarray,
                        baseline_types: np.ndarray) -> dict:
     started = perf_counter(); scaled = bundle.scaler.transform(x); classifier_predicted, _ = bundle.attack_classifier.predict(scaled)
-    anomaly = bundle.anomaly_detector.score(scaled); sequence = bundle.sequence_detector.score_stream(scaled, entities)
+    anomaly = bundle.anomaly_detector.score(scaled)
+    sequence_input = event_sequence_matrix(bundle, scaled)
+    sequence = bundle.sequence_detector.score_stream(sequence_input, entities)
     probabilities = bundle.attack_classifier.probabilities(scaled)
     malicious_indices = [index for index, name in enumerate(bundle.attack_classifier.classes_) if name != "normal"]
     malicious = probabilities[:, malicious_indices].max(axis=1) if malicious_indices else np.zeros(len(x))
@@ -394,6 +408,32 @@ def classifier_metrics(classifier: AttackClassifier, x: np.ndarray, y: np.ndarra
             "malicious_pr_auc": float(average_precision_score(y != "normal", malicious))}
 
 
+def oof_classifier_probabilities(model_kind: str, scaled: np.ndarray, labels: np.ndarray,
+                                 entities: np.ndarray, target_classifier: AttackClassifier, seed: int) -> np.ndarray:
+    """Entity-disjoint RF/XGB outputs used only for downstream GRU fitting."""
+    unique_entities = np.unique(entities); folds = min(5, len(unique_entities))
+    if folds < 2: raise ValueError("At least two entities are required for out-of-fold enrichment")
+    target_classes = target_classifier.classes_
+    result = np.zeros((len(labels), len(target_classes)), dtype=float)
+    target_index = {str(name): index for index, name in enumerate(target_classes)}
+    for fold, (fit_indices, score_indices) in enumerate(GroupKFold(folds).split(scaled, labels, groups=entities)):
+        candidate = AttackClassifier(seed + fold + 101, model_kind).fit(scaled[fit_indices], labels[fit_indices])
+        probabilities = candidate.probabilities(scaled[score_indices])
+        for local_index, class_name in enumerate(candidate.classes_):
+            if str(class_name) in target_index:
+                result[score_indices, target_index[str(class_name)]] = probabilities[:, local_index]
+    return target_classifier.apply_calibration(result)
+
+
+def sequence_metric(scores: np.ndarray, labels: np.ndarray) -> dict:
+    binary = labels != "normal"
+    try:
+        return {"pr_auc": float(average_precision_score(binary, scores)),
+                "roc_auc": float(roc_auc_score(binary, scores))}
+    except ValueError:
+        return {"pr_auc": 0.0, "roc_auc": 0.0}
+
+
 def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int = 42,
           artifact_name: str = "current.joblib") -> ModelBundle:
     paths = {name: (data_dir / "processed" / f"{name}.jsonl", data_dir / "processed" / f"{name}_labels.jsonl")
@@ -414,9 +454,6 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
                                        "data": {name: list(profile.get(name, [])) for name in EMPTY_PROFILE}}
     scaler = build_scaler().fit(x_train[normal_mask]); scaled_train = scaler.transform(x_train)
     anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[normal_mask])
-    sequence = GRUSequenceDetector(
-        len(FeaturePipeline.names), random_state=seed, feature_indices=FeaturePipeline.sequence_feature_indices,
-    ).fit(scaled_train, y_train, train_entities)
     val_x, val_y, val_entities, _, val_scenarios, val_criticality, val_history, val_baselines = featured["validation"]
     calibration_indices, selection_indices, threshold_indices = validation_partitions(val_y)
     scaled_val = scaler.transform(val_x); candidate_models, candidate_results = {}, {}
@@ -436,10 +473,60 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     selected_kind = max(candidate_results, key=lambda name: (
         candidate_results[name]["macro_f1"], candidate_results[name]["malicious_pr_auc"]))
     classifier = candidate_models[selected_kind]
+    oof_probabilities = oof_classifier_probabilities(
+        selected_kind, scaled_train, y_train, train_entities, classifier, seed)
+    enriched_train = enrich_scaled(scaled_train, anomaly, classifier, oof_probabilities)
+    event_sequence_scaler = build_scaler().fit(enriched_train[normal_mask])
+    event_sequence_train = event_sequence_scaler.transform(enriched_train)
+    sequence = GRUSequenceDetector(
+        len(enriched_names(FeaturePipeline.names)), hidden_size=40, window_size=12,
+        error_top_k=7, random_state=seed, minimum_history=3,
+    ).fit(event_sequence_train, y_train, train_entities)
+    legacy_sequence = GRUSequenceDetector(
+        len(FeaturePipeline.names), random_state=seed,
+        feature_indices=FeaturePipeline.sequence_feature_indices,
+    ).fit(scaled_train, y_train, train_entities)
+
+    test_x, test_y, test_entities, _, test_scenarios, test_criticality, test_history, test_baselines = featured["test"]
+    scaled_test = scaler.transform(test_x)
+    enriched_val = enrich_scaled(scaled_val, anomaly, classifier)
+    enriched_test = enrich_scaled(scaled_test, anomaly, classifier)
+    ordered_rows = {name: sorted(raw_splits[name], key=lambda item: item.event.timestamp)
+                    for name in ("train", "validation", "test")}
+    daily_train = aggregate_daily(enriched_train, y_train, train_entities,
+        np.asarray([row.event.timestamp for row in ordered_rows["train"]], dtype=object))
+    daily_val = aggregate_daily(enriched_val, val_y, val_entities,
+        np.asarray([row.event.timestamp for row in ordered_rows["validation"]], dtype=object))
+    daily_test = aggregate_daily(enriched_test, test_y, test_entities,
+        np.asarray([row.event.timestamp for row in ordered_rows["test"]], dtype=object))
+    daily_normal = daily_train.labels == "normal"
+    entity_behavior_scaler = build_scaler().fit(daily_train.vectors[daily_normal])
+    daily_train_scaled = entity_behavior_scaler.transform(daily_train.vectors)
+    entity_behavior_detector = GRUSequenceDetector(
+        len(enriched_names(FeaturePipeline.names)), hidden_size=48, window_size=30,
+        error_top_k=8, random_state=seed + 17, minimum_history=7, normalization="bounded_exp",
+    ).fit(daily_train_scaled, daily_train.labels, daily_train.entities)
+    daily_val_scores = entity_behavior_detector.score_stream(
+        entity_behavior_scaler.transform(daily_val.vectors), daily_val.entities)
+    entity_behavior_threshold, daily_threshold_metrics = tune_daily_threshold(
+        daily_val_scores, daily_val.labels)
+    daily_test_scores = entity_behavior_detector.score_stream(
+        entity_behavior_scaler.transform(daily_test.vectors), daily_test.entities)
+    entity_behavior_metrics = daily_evaluation(
+        daily_test_scores, daily_test, entity_behavior_threshold)
+    legacy_test_scores = legacy_sequence.score_stream(scaled_test, test_entities)
+    enriched_test_scores = sequence.score_stream(event_sequence_scaler.transform(enriched_test), test_entities)
+    sequence_comparison = {
+        "current_16_feature_gru": sequence_metric(legacy_test_scores, test_y),
+        "enriched_42_feature_gru": sequence_metric(enriched_test_scores, test_y),
+        "window_size": 12, "comparison_split": "untouched_entity_disjoint_test",
+    }
     version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bundle = ModelBundle(version, FEATURE_SCHEMA_VERSION, FeaturePipeline.names, scaler, anomaly, sequence, classifier,
                          50.0, {}, bootstrap_profiles, DEFAULT_RISK_WEIGHTS.as_dict(), .85, 70.0,
-                         {"selected": selected_kind, "validation": candidate_results})
+                         {"selected": selected_kind, "validation": candidate_results},
+                         event_sequence_scaler, entity_behavior_scaler, entity_behavior_detector, entity_behavior_threshold,
+                         enriched_names(FeaturePipeline.names))
     behavioral_threshold_selection = tune_behavioral_threshold(
         bundle, val_x[threshold_indices], val_y[threshold_indices], val_entities[threshold_indices])
     threshold_selection = tune_threshold(
@@ -447,7 +534,6 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         val_criticality[threshold_indices])
     validation_metrics = evaluation_metrics(
         bundle, val_x, val_y, val_entities, val_scenarios, val_criticality, val_history, val_baselines)
-    test_x, test_y, test_entities, _, test_scenarios, test_criticality, test_history, test_baselines = featured["test"]
     test_metrics = evaluation_metrics(
         bundle, test_x, test_y, test_entities, test_scenarios, test_criticality, test_history, test_baselines)
     test_metrics["cold_start_evaluation"]["attack_challenge"] = cold_start_attack_challenge(
@@ -459,10 +545,15 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         "behavioral_threshold_selection": behavioral_threshold_selection,
         "classifier_selection": {"selected": selected_kind, "selection_partition": candidate_results,
                                   "policy": "highest validation macro F1; malicious PR-AUC tie-break"},
+        "event_sequence_comparison": sequence_comparison,
+        "entity_behavior": {"validation_threshold": daily_threshold_metrics, "test": entity_behavior_metrics,
+                            "input_contract": "30-day sliding window of p95-aggregated 42-feature daily vectors",
+                            "training": "normal daily sequences only; predict next observed day"},
         "risk_weights": bundle.risk_weights,
         "training_population": {"total_rows": int(len(y_train)), "normal_rows": int(np.sum(normal_mask)),
             "attack_rows": int(np.sum(~normal_mask)), "preprocessor_fit": "normal_only",
-            "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_sequences_only",
+            "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_42_feature_sequences_only",
+            "entity_behavior_detector_fit": "normal_30_day_sequences_only",
             "classifier_fit": "normal_and_attack", "classifier_probability_calibration": "validation_sigmoid",
             "classifier_cold_start_attack_augmentation_rows": int(len(cold_y)),
             "holdout_profile_policy": "training-seeded online profiles; validation/test labels never consulted"},
@@ -470,6 +561,7 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
             if (data_dir / "processed" / "manifest.json").exists() else {},
         "bootstrap_profiles": {"source": "normal_training_rows_only", "profile_count": len(bootstrap_profiles)},
         "trained_at": datetime.now(timezone.utc).isoformat(), "feature_count": len(FeaturePipeline.names),
+        "enriched_feature_count": len(enriched_names(FeaturePipeline.names)),
     }
     bundle.save(model_dir / artifact_name)
     if artifact_name == "current.joblib":

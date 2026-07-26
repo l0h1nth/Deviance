@@ -45,7 +45,10 @@ class AttackClassifier:
         return self
 
     def probabilities(self, features: np.ndarray) -> np.ndarray:
-        raw = self.model.predict_proba(features)
+        return self.apply_calibration(self.model.predict_proba(features))
+
+    def apply_calibration(self, raw: np.ndarray) -> np.ndarray:
+        raw = np.asarray(raw, dtype=float)
         if not self.calibrators: return raw
         calibrated = np.column_stack([
             model.predict_proba(raw[:, [index]])[:, 1] if model is not None else raw[:, index]

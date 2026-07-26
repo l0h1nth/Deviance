@@ -41,6 +41,18 @@ def test_model_api_exposes_cold_start_safety_metrics():
         }
 
 
+def test_behavioral_drift_api_exposes_frozen_daily_model():
+    with TestClient(app) as client:
+        response = client.get("/api/behavior/rankings", headers=auth_headers(client))
+        assert response.status_code == 200
+        body = response.json()
+        assert body["model_ready"] is True
+        assert body["window_days"] == 30
+        assert body["minimum_history_days"] == 7
+        assert 0 < body["threshold"] <= 1
+        assert isinstance(body["rankings"], list)
+
+
 def test_ingestion_alert_and_analyst_feedback():
     with TestClient(app) as client:
         headers=auth_headers(client)

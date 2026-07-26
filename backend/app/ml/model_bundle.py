@@ -6,6 +6,7 @@ import numpy as np
 
 from app.ml.anomaly_model import IsolationForestDetector
 from app.ml.attack_classifier import AttackClassifier
+from app.ml.enriched_features import enrich_scaled, enriched_names
 from app.ml.feature_registry import FEATURE_SCHEMA_VERSION
 from app.ml.risk_policy import DEFAULT_RISK_WEIGHTS, RiskWeights, behavioral_score
 from app.ml.sequence_model import GRUSequenceDetector
@@ -27,6 +28,11 @@ class ModelBundle:
     behavioral_threshold: float = .85
     priority_threshold: float = 70.0
     classifier_candidates: dict = field(default_factory=dict)
+    event_sequence_scaler: object | None = None
+    entity_behavior_scaler: object | None = None
+    entity_behavior_detector: GRUSequenceDetector | None = None
+    entity_behavior_threshold: float = .85
+    enriched_feature_names: list[str] = field(default_factory=list)
 
     def validate(self, expected_names: list[str]) -> None:
         if self.feature_schema_version != FEATURE_SCHEMA_VERSION:
@@ -39,10 +45,21 @@ class ModelBundle:
         domain_anomaly_scores = {
             name: float(values[0]) for name, values in self.anomaly_detector.domain_scores(scaled).items()
         }
-        previous_scaled = self.scaler.transform(previous_vectors) if previous_vectors is not None and len(previous_vectors) else np.empty((0, len(vector)))
-        sequence_anomaly_score = self.sequence_detector.score_one(previous_scaled, scaled[0])
         probabilities = self.attack_classifier.probabilities(scaled)[0]
         class_probabilities = {str(name): float(value) for name, value in zip(self.attack_classifier.classes_, probabilities)}
+        previous_scaled = self.scaler.transform(previous_vectors) if previous_vectors is not None and len(previous_vectors) else np.empty((0, len(vector)))
+        sequence_width = getattr(self.sequence_detector, "source_input_size", len(vector))
+        if sequence_width > len(vector):
+            current_sequence = enrich_scaled(scaled, self.anomaly_detector, self.attack_classifier,
+                                             probabilities.reshape(1, -1))[0]
+            previous_sequence = enrich_scaled(previous_scaled, self.anomaly_detector, self.attack_classifier) if len(previous_scaled) else np.empty((0, sequence_width))
+            sequence_scaler = getattr(self, "event_sequence_scaler", None)
+            if sequence_scaler is not None:
+                current_sequence = sequence_scaler.transform(current_sequence.reshape(1, -1))[0]
+                previous_sequence = sequence_scaler.transform(previous_sequence) if len(previous_sequence) else previous_sequence
+        else:
+            current_sequence, previous_sequence = scaled[0], previous_scaled
+        sequence_anomaly_score = self.sequence_detector.score_one(previous_sequence, current_sequence)
         predicted = str(self.attack_classifier.classes_[int(probabilities.argmax())])
         confidence = float(probabilities.max())
         malicious = max((value for name, value in class_probabilities.items() if name != "normal"), default=0.0)
@@ -63,7 +80,8 @@ class ModelBundle:
         return {"anomaly_score": anomaly_score, "sequence_anomaly_score": sequence_anomaly_score, "predicted_attack": predicted,
                 "classifier_confidence": confidence, "class_probabilities": class_probabilities,
                 "behavioral_score": behavior, "domain_anomaly_scores": domain_anomaly_scores,
-                "scaled_vector": scaled[0]}
+                "scaled_vector": scaled[0], "enriched_vector": current_sequence,
+                "enriched_feature_names": getattr(self, "enriched_feature_names", None) or enriched_names(self.feature_names)}
 
     def save(self, path: Path) -> None:
         path = path.resolve(); path.parent.mkdir(parents=True, exist_ok=True); joblib.dump(self, path)

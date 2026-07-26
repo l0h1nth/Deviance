@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import alerts, auth, drift, events, health, ingestion, metrics, models, notifications, profiles, simulations
+from app.api import alerts, auth, behavior, drift, events, health, ingestion, metrics, models, notifications, profiles, simulations
 from app.config import get_settings
 from app.database import models as database_models
 from app.database.session import Base, engine
@@ -44,5 +44,5 @@ async def request_size_limit(request: Request, call_next):
         return JSONResponse({"detail": "internal server error"}, 500)
 
 
-for router in (auth.router, health.router, ingestion.router, events.router, alerts.router, profiles.router, metrics.router, drift.router, models.router, simulations.router, notifications.router):
+for router in (auth.router, health.router, ingestion.router, events.router, alerts.router, profiles.router, metrics.router, drift.router, behavior.router, models.router, simulations.router, notifications.router):
     app.include_router(router, prefix="/api")
