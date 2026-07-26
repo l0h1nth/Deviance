@@ -6,7 +6,7 @@ It implements the full hackathon brief: synthetic behavioral data, extreme class
 
 ## Watch the working prototype
 
-[▶ Watch the narrated 1 minute 54 second Deviance demonstration](docs/demo/deviance-demo-ai-voiceover.mp4)
+https://github.com/user-attachments/assets/3a3a6448-654e-49e0-86ff-14905c02d8b1
 
 The recording follows a real application session: administrator login, live synthetic telemetry, dashboard updates, 32-feature evidence, risk-ranked detections, alert investigation, raw validated telemetry, identity-risk ranking, independent audit metrics, and analyst-gated concept drift. The video contains an American English AI narration synchronized to the visible workflow.
 
