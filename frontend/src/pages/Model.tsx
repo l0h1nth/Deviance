@@ -1,4 +1,4 @@
-const percent=(value:any)=>typeof value==='number'?(value*100).toFixed(1)+'%':'—';
+const percent=(value:any,digits=1)=>typeof value==='number'?(value*100).toFixed(digits)+'%':'—';
 const number=(value:any,digits=1)=>typeof value==='number'?value.toFixed(digits):'—';
 const barWidth=(value:any)=>`${Math.max(0,Math.min(100,(typeof value==='number'?value:0)*100))}%`;
 
@@ -7,25 +7,27 @@ export function ModelPage({model}:{model:any}){
   const selection=metrics.threshold_selection||{},behaviorSelection=metrics.behavioral_threshold_selection||{};
   const population=metrics.training_population||{},classifierSelection=metrics.classifier_selection||{};
   const sequenceComparison=metrics.event_sequence_comparison||{},entityBehavior=metrics.entity_behavior?.test||{};
-  const scenario=test.scenario_detection||{},priority=test.priority_queue||{},cold=test.cold_start_evaluation||{};
+  const priority=test.priority_queue||{},topOne=test.top_1_percent||priority,cold=test.cold_start_evaluation||{};
+  const normalSupport=test.classification_report?.normal?.support||0;
+  const topOneFpr=typeof topOne.false_positive_rate==='number'?topOne.false_positive_rate:(topOne.false_positives||0)/Math.max(normalSupport,1);
   const coldOverall=cold.overall||{},coldBuckets=cold.by_history_bucket||{},coldAttack=cold.attack_challenge||{};
   const coldClasses=coldAttack.by_attack_class||{};
   const coldFalsePositives=Math.round((coldOverall.normal_count||0)*(coldOverall.benign_false_positive_rate||0));
   const coldCaught=Math.round((coldAttack.event_count||0)*(coldAttack.attack_recall||0));
   const coldScenarios=Math.round((coldAttack.scenario_count||0)*(coldAttack.scenario_recall||0));
-  const cards=[
-    ['Classifier accuracy',test.classifier_accuracy,'Correct multiclass predictions divided by all holdout events. Read with Macro F1 because normal events dominate.'],
-    ['Classifier Macro F1',test.macro_f1,'Unweighted event-level classification F1 across normal and the six required attack classes.'],
-    ['Classifier PR-AUC',test.classifier_pr_auc,'Known-attack probability ranking on the imbalanced untouched holdout.'],
-    ['Behavioral PR-AUC',test.behavioral_pr_auc,'Normal-only Isolation Forest, GRU, and profile-deviation ranking without classifier evidence.'],
-    ['Behavioral recall',test.behavioral_recall,'Attacks caught using only normal-trained behavioral evidence at its frozen threshold.'],
-    ['Finding precision',test.alert_precision,'Precision of operational findings at the recall-oriented validation threshold.'],
-    ['Finding recall',test.alert_recall,'Event-level attacks surfaced by the operational finding threshold.'],
-    ['Scenario recall',scenario.recall,'Injected multi-event attack scenarios with at least one event surfaced.'],
+  const cards:[string,any,string,number?][]=[
+    ['Detection accuracy',test.classifier_accuracy,'Correct predictions on the entity-disjoint imbalanced holdout. Read with attack-type Macro F1 because normal events dominate.'],
+    ['Attack-type Macro F1',test.macro_f1,'Unweighted classification quality across normal and all six required anomaly types.'],
+    ['Finding precision',test.alert_precision,'True attack events divided by all events surfaced at the operational finding threshold.'],
+    ['Finding recall',test.alert_recall,'Attack events surfaced at the recall-oriented operational finding threshold.'],
+    ['Finding false-positive rate',test.alert_false_positive_rate,'Normal holdout events incorrectly surfaced at the operational finding threshold.',2],
+    ['Top 1% precision',topOne.precision,'Attack precision among the highest-risk one percent of holdout events.'],
+    ['Top 1% recall',topOne.recall,'Share of all holdout attack events captured within the one-percent analyst budget.'],
+    ['Top 1% false-positive rate',topOneFpr,'Normal holdout events incorrectly included in the highest-risk one-percent analyst queue.',2],
   ];
   return <>
     <header className="page-head"><div><span className="eyebrow">MODEL GOVERNANCE</span><h1>Performance</h1><p>Entity-disjoint chronological evaluation with normal-only anomaly learning, a held-out classifier choice, and two analyst thresholds.</p></div></header>
-    <section className="stats model-stats">{cards.map(([name,value,help])=><article className="metric" key={String(name)} title={String(help)}><span>{name}</span><strong>{percent(value)}</strong><small>{help}</small></article>)}</section>
+    <section className="stats model-stats">{cards.map(([name,value,help,digits])=><article className="metric" key={name} title={help}><span>{name}</span><strong>{percent(value,digits)}</strong><small>{help}</small></article>)}</section>
 
     <section className="panel cold-start-card">
       <header className="cold-start-head"><div><span className="eyebrow">COLD-START SAFETY</span><h2>New identities, measured honestly</h2><p>Peer and global behavior protect an entity until its personal profile becomes mature.</p></div><span className="cold-start-badge"><i/>Fallback active · &lt; {cold.maturity_threshold??12} events</span></header>
