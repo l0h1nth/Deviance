@@ -137,6 +137,8 @@ Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` before any non-demo
 
 Available scenarios are `mixed`, `brute_force`, `credential_stuffing`, `lateral_movement`, `impossible_travel`, `device_spoofing`, `low_slow_exfiltration`, `cold_start_benign`, `cold_start_attack`, `concept_drift`, and `insider_drift`. The API retains `cold_start` as a backward-compatible alias for the benign scenario.
 
+Simulation playback time is deliberately separate from security-event time. Choosing 500 ms makes results appear every half second, but brute-force, travel, drift, and exfiltration timestamps retain their original behavioral gaps for feature extraction. A focused 30-event low-and-slow replay uses one five-to-ten-event exfiltration sequence plus benign warm-up and interleaved context across the original multi-day window. Ground-truth labels remain in the simulator sidecar and never cross the production inference boundary; they are used only to report detected attacks, misses, correct attack types, misclassifications, false positives, and newly grouped incidents in the simulation modal.
+
 ## Test live counters and drift monitoring
 
 1. Restart the backend and frontend, sign in, and confirm the fresh dashboard begins at zero events and detections.

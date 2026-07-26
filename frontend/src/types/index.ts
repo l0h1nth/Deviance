@@ -37,7 +37,14 @@ export type LiveEvent={
   incident_event_count:number;event:Record<string,any>;
 };
 
-export type SimulationStatus={status:string;scenario:string|null;interval_ms:number|null;event_count:number;processed_events:number;alert_count:number;started_at:string|null;stopped_at:string|null;last_event_id:string|null;last_error:string|null};
+export type SimulationStatus={
+  status:string;scenario:string|null;interval_ms:number|null;event_count:number;processed_events:number;
+  ground_truth_attack_events:number;ground_truth_normal_events:number;detected_attack_events:number;
+  missed_attack_events:number;correct_attack_classifications:number;misclassified_attack_events:number;
+  false_positive_events:number;new_incident_count:number;alert_count:number;
+  started_at:string|null;stopped_at:string|null;telemetry_start:string|null;telemetry_end:string|null;
+  last_event_id:string|null;last_error:string|null;
+};
 export type DriftReviewAction='investigate'|'approve_adaptation'|'reject_change'|'dismiss';
 export type DriftEvent={id:number;subject_id:string;feature:string;magnitude:number;recommendation:string;detected_at:string;status:string;review_status:string;severity:string;domain:string;ks_distance:number;absolute_shift:number;baseline_version:number;previous_distribution:Record<string,number>;current_distribution:Record<string,number>;drift_confidence:number;review_history:{action:string;analyst:string;comment:string;created_at:string}[];metadata:Record<string,any>};
 export type DriftWindow={entity:string;reference_window:{count:number;target:number};current_window:{count:number;target:number};status:string;trusted_events_only:boolean;flagged_features:string[];baseline_version:number;last_observed_at:string|null};

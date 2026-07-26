@@ -5,7 +5,7 @@ import pytest
 
 from app.synthetic.attack_generator import GENERATORS, credential_stuffing, generate_attacks
 from app.synthetic.normal_generator import build_users, generate_normal, normal_event
-from app.synthetic.simulation import build_simulation_events
+from app.synthetic.simulation import build_simulation_events, build_simulation_run
 
 
 @pytest.mark.parametrize("label",list(GENERATORS))
@@ -40,3 +40,23 @@ def test_benign_and_attack_cold_start_simulations_use_fresh_subjects(tmp_path):
     assert {row.entity_id for row in benign} == {"usr-cold-start"}
     assert all(row.entity_id.startswith("cold-") and row.user_id == row.entity_id for row in compromised)
     assert all(row.device_id.startswith("cold-") and row.claimed_device_id.startswith("cold-") for row in compromised)
+
+
+def test_low_slow_replay_keeps_event_time_and_adds_benign_context(tmp_path):
+    rng = np.random.default_rng(42); entities = build_users(18, rng)
+    normal = generate_normal(entities, 36, rng)
+    rows = sorted(normal + generate_attacks(entities, normal, 1, rng, .03), key=lambda row: row.event.timestamp)
+    stream = tmp_path / "demo_stream.jsonl"; labels = tmp_path / "demo_stream_labels.jsonl"
+    stream.write_text("".join(json.dumps(row.event.model_dump(mode="json")) + "\n" for row in rows))
+    labels.write_text("".join(json.dumps(row.sidecar().model_dump(mode="json")) + "\n" for row in rows))
+
+    fast = build_simulation_run(stream, "low_slow_exfiltration", 30, 500)
+    slow = build_simulation_run(stream, "low_slow_exfiltration", 30, 2000)
+    attack_count = sum(row.label == "low_slow_exfiltration" for row in fast)
+    assert 5 <= attack_count <= 10
+    assert sum(row.label == "normal" for row in fast) == 30 - attack_count
+    assert fast == sorted(fast, key=lambda row: row.event.timestamp)
+    assert (fast[-1].event.timestamp - fast[0].event.timestamp).days >= 7
+    fast_gaps = [right.event.timestamp - left.event.timestamp for left, right in zip(fast, fast[1:])]
+    slow_gaps = [right.event.timestamp - left.event.timestamp for left, right in zip(slow, slow[1:])]
+    assert fast_gaps == slow_gaps  # playback speed never changes model event-time

@@ -408,10 +408,11 @@ td small { margin-top: var(--space-1); font-size: var(--font-meta); line-height:
 .simulation-form { margin:var(--space-6) 0; display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:var(--card-gap); }
 .simulation-form label { color:var(--muted-dark); font-size:var(--font-small); font-weight:600; }
 .simulation-form select,.simulation-form input { width:100%; height:var(--control-height); margin-top:var(--space-2); padding:0 var(--space-3); border:1px solid var(--line); border-radius:9px; outline:0; background:var(--surface-raised); font-size:var(--font-control); text-transform:capitalize; }
-.simulation-progress { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--space-3); }
+.simulation-progress { display:grid; grid-template-columns:repeat(4,1fr); gap:var(--space-3); }
 .simulation-progress>div { padding:var(--compact-padding); border:1px solid var(--line); border-radius:12px; background:var(--surface-raised); }
 .simulation-progress span { display:block; color:var(--muted); font-size:var(--font-meta); }
 .simulation-progress strong { display:block; margin-top:var(--space-2); font-size:var(--font-section); text-transform:capitalize; }
+.simulation-progress small { display:block; margin-top:3px; color:var(--muted); font-size:var(--font-meta); }
 .simulation-state.running { color:var(--good); }.simulation-state.failed { color:var(--danger); }.simulation-state.completed { color:var(--purple); }
 .progress-track { height:7px; margin:var(--space-4) 0; overflow:hidden; border-radius:8px; background:var(--soft-fill); }
 .progress-track i { display:block; height:100%; border-radius:8px; background:var(--purple); transition:width .2s; }

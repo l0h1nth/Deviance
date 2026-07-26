@@ -20,6 +20,11 @@ def test_simulation_start_stop_model_status_and_notifications():
         started = client.post("/api/simulations/start", headers=headers,
             json={"scenario": "brute_force", "interval_ms": 500, "event_count": 8})
         assert started.status_code == 202 and started.json()["status"] == "running"
+        simulation = started.json()
+        assert simulation["ground_truth_attack_events"] == 8
+        assert simulation["ground_truth_normal_events"] == 0
+        assert simulation["telemetry_start"] and simulation["telemetry_end"]
+        assert "new_incident_count" in simulation and "detected_attack_events" in simulation
         stopped = client.post("/api/simulations/stop", headers=headers)
         assert stopped.status_code == 200 and stopped.json()["status"] in {"stopped", "completed"}
         status = client.get("/api/models/status", headers=headers).json()

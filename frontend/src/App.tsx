@@ -18,8 +18,20 @@ export default function App(){
   const[theme,setTheme]=useState<Theme>(()=>(localStorage.getItem('deviance-clean-theme') as Theme)||'light'),[user,setUser]=useState<AuthUser|null>(null),[authReady,setAuthReady]=useState(false);
   const[collapsed,setCollapsed]=useState(()=>localStorage.getItem(COLLAPSE_KEY)==='true'),[helpOpen,setHelpOpen]=useState(false),[notificationsOpen,setNotificationsOpen]=useState(false),[modelOpen,setModelOpen]=useState(false),[selectedUser,setSelectedUser]=useState<string>();
   const[readIds,setReadIds]=useState<Set<string>>(()=>{try{return new Set(JSON.parse(localStorage.getItem(READ_KEY)||'[]'))}catch{return new Set()}});
-  const refreshGeneration=useRef(0);
-  const refreshRuntime=useCallback(async()=>{const generation=++refreshGeneration.current;const[metricResult,alertResult,driftResult,behaviorResult]=await Promise.allSettled([api.metrics(),api.alerts(),api.drift(),api.behaviorRankings()]);if(generation!==refreshGeneration.current)return;if(metricResult.status==='fulfilled')setMetrics(metricResult.value);if(alertResult.status==='fulfilled')setAlerts(alertResult.value);if(driftResult.status==='fulfilled')setDrift(driftResult.value);if(behaviorResult.status==='fulfilled')setBehavior(behaviorResult.value)},[]);
+  const refreshInFlight=useRef(false),refreshQueued=useRef(false);
+  const refreshRuntime=useCallback(async()=>{
+    if(refreshInFlight.current){refreshQueued.current=true;return}
+    refreshInFlight.current=true;
+    try{
+      do{
+        refreshQueued.current=false;
+        await Promise.allSettled([
+          api.metrics().then(setMetrics),api.alerts().then(setAlerts),
+          api.drift().then(setDrift),api.behaviorRankings().then(setBehavior),
+        ]);
+      }while(refreshQueued.current);
+    }finally{refreshInFlight.current=false}
+  },[]);
   const load=useCallback(()=>{void refreshRuntime();api.notifications().then(result=>setNotifications(result.notifications)).catch(()=>{});api.modelStatus().then(setModelStatus).catch(()=>{})},[refreshRuntime]);
   useEffect(()=>{if(!authToken()){queueMicrotask(()=>setAuthReady(true));return}api.me().then(setUser).catch(()=>api.logout()).finally(()=>setAuthReady(true))},[]);
   useEffect(()=>{if(user){load();api.model().then(setModel).catch(()=>{});api.events().then(setLiveEvents).catch(()=>{})}},[load,user]);
