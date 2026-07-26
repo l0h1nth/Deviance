@@ -21,15 +21,15 @@ Traditional signatures recognize known bad artifacts. Deviance instead learns ha
 
 ## Evaluation against judging criteria
 
-Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. Accuracy is 99.68%, while imbalance-aware Macro F1 is 92.80%. The operational layer reaches 94.04% precision, 86.86% recall and 0.12% normal-event FPR.
+Detection accuracy is reported on a later, independent-seed audit set with 60 unseen entities rather than a reused tuning split. Accuracy is 99.70%, while imbalance-aware Macro F1 is 94.37%. The operational layer reaches 95.07% precision, 82.83% recall and 0.093% normal-event FPR.
 
-Attack scenarios are injected at 1% of normal sessions, producing 2.14% test attack rows. The normal-only behavioral layer reaches 80.67% PR-AUC and 73.73% recall. Insider drift remains normal ground truth and has 0% finding FPR. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent threshold creates the priority queue.
+Attack scenarios are injected at 1% of normal sessions, producing 2.11% audit attack rows. The normal-only behavioral layer reaches 76.02% PR-AUC and 52.36% recall. Insider drift remains normal ground truth and has 0% finding FPR. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent threshold creates the priority queue.
 
 Classification covers exactly brute force, credential stuffing, lateral movement, impossible travel, device spoofing, low-and-slow exfiltration, and normal, including API-channel variants. Random Forest beat XGBoost on a dedicated validation selection split. Balanced probability calibration prevents rare classes from being collapsed into normal.
 
 Explainability connects raw event fields to 32 engineered signals, two anomaly scores, class probabilities, final risk components, and analyst guidance. It avoids claiming causal SHAP explanations; these are transparent feature deviations and weighted evidence.
 
-Cold start and drift are observable states rather than hidden special cases. Holdout profiles evolve without label access, and production profiles use low-risk trust gating to limit poisoning.
+Cold start and drift are observable states rather than hidden special cases. Holdout profiles evolve without label access, and production profiles use low-risk trust gating to limit poisoning. Validation scenarios cannot cross calibration, selection, and threshold partitions; EntityBehaviorGRU training uses entity-disjoint out-of-fold, uncalibrated classifier outputs.
 
 System design is runnable on a laptop and has clear production seams. Sequence history, profiles and drift windows persist outside worker memory. A real Uvicorn/TCP benchmark measures authentication, validation, feature extraction, inference, SQLite-WAL transactions and responses under 1/4/8 entity-partition queues. The sequential result is 194/229/242 ms P50/P95/P99 at 5.10 events/s; all concurrent runs have zero server errors, zero ordering violations and expected 409/422/401 failure handling. Kafka/Redpanda, Redis, PostgreSQL, ClickHouse/object storage and durable notification substitutions are specified rather than presented as already deployed.
 
@@ -39,7 +39,7 @@ Start with the empty dashboard to establish a clean SOC shift. Run a mixed simul
 
 ## Assumptions and limitations
 
-All efficacy measurements are synthetic. The GRU is a lightweight recurrent reservoir rather than a trained deep network. Several attack supports are small. SQLite, one demo administrator, local artifact storage, and process-local SSE are demo choices. No metric here should be interpreted as a production security guarantee.
+All efficacy measurements are synthetic. The independent audit still shares the generator family with training, so it is stronger leakage control rather than external validation. The GRU is a lightweight recurrent reservoir rather than a trained deep network. Several attack supports are small. SQLite, local artifact storage, and process-local SSE are demo choices. `admin/admin` works only in demo/development/test; production startup requires environment-supplied credentials and signing secret. No metric here should be interpreted as a production security guarantee.
 
 ## Reproducibility
 

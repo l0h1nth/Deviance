@@ -41,7 +41,7 @@ def overview(db: Session = Depends(get_db)):
             attacks[name] = int(count or 0)
     trend_rows = list(db.scalars(select(PredictionRecord).order_by(desc(PredictionRecord.id)).limit(50)))
     settings = get_settings(); bundle = ModelBundle.load(settings.model_dir / "current.joblib", settings.model_dir)
-    holdout = bundle.metrics.get("test", {}); budget = holdout.get("top_1_percent", {})
+    holdout = bundle.metrics.get("audit") or bundle.metrics.get("test", {}); budget = holdout.get("top_1_percent", {})
     return {"events_analyzed": events_analyzed, "total_alerts": total_alerts,
             "unresolved_alerts": unresolved_alerts, "open_alerts": open_alerts,
             "investigating_alerts": investigating_alerts, "reviewed_alerts": reviewed_alerts,

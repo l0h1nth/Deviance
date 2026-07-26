@@ -3,10 +3,10 @@ const number=(value:any,digits=1)=>typeof value==='number'?value.toFixed(digits)
 const barWidth=(value:any)=>`${Math.max(0,Math.min(100,(typeof value==='number'?value:0)*100))}%`;
 
 export function ModelPage({model}:{model:any}){
-  const metrics=model?.metrics||{},test=metrics.test||{},classes=test.classes||[],matrix=test.confusion_matrix||[];
+  const metrics=model?.metrics||{},test=metrics.audit||metrics.test||{},classes=test.classes||[],matrix=test.confusion_matrix||[];
   const selection=metrics.threshold_selection||{},behaviorSelection=metrics.behavioral_threshold_selection||{};
   const population=metrics.training_population||{},classifierSelection=metrics.classifier_selection||{};
-  const sequenceComparison=metrics.event_sequence_comparison||{},entityBehavior=metrics.entity_behavior?.test||{};
+  const sequenceComparison=metrics.event_sequence_comparison||{},entityBehavior=metrics.entity_behavior?.audit||metrics.entity_behavior?.test||{};
   const priority=test.priority_queue||{},topOne=test.top_1_percent||priority,cold=test.cold_start_evaluation||{};
   const normalSupport=test.classification_report?.normal?.support||0;
   const topOneFpr=typeof topOne.false_positive_rate==='number'?topOne.false_positive_rate:(topOne.false_positives||0)/Math.max(normalSupport,1);
@@ -26,7 +26,7 @@ export function ModelPage({model}:{model:any}){
     ['Top 1% false-positive rate',topOneFpr,'Normal holdout events incorrectly included in the highest-risk one-percent analyst queue.',2],
   ];
   return <>
-    <header className="page-head"><div><span className="eyebrow">MODEL GOVERNANCE</span><h1>Performance</h1><p>Entity-disjoint chronological evaluation with normal-only anomaly learning, a held-out classifier choice, and two analyst thresholds.</p></div></header>
+    <header className="page-head"><div><span className="eyebrow">MODEL GOVERNANCE</span><h1>Performance</h1><p>Independent-seed, entity-disjoint chronological audit after normal-only anomaly learning and frozen validation thresholds.</p></div></header>
     <section className="stats model-stats">{cards.map(([name,value,help,digits])=><article className="metric" key={name} title={help}><span>{name}</span><strong>{percent(value,digits)}</strong><small>{help}</small></article>)}</section>
 
     <section className="panel cold-start-card">

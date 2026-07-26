@@ -4,7 +4,7 @@ This branch adds a second, non-alerting behavioral path while retaining the even
 
 ## Implemented architecture
 
-Each telemetry event is validated and converted into the existing 32 engineered behavioral features. The real-time event GRU stays on that original contract. For the separate daily path, four normal-only Isolation Forest domain scores and six calibrated Random Forest attack probabilities are appended to form a fixed 42-value vector. The classifier never consumes GRU output, so there is no prediction feedback loop.
+Each telemetry event is validated and converted into the existing 32 engineered behavioral features. The real-time event GRU stays on that original contract. For the separate daily path, four normal-only Isolation Forest domain scores and six raw Random Forest attack probabilities are appended to form a fixed 42-value vector. Training probabilities are entity-disjoint out-of-fold predictions; validation calibration is deliberately excluded from the EntityBehaviorGRU input contract. The classifier never consumes GRU output, so there is no prediction feedback loop.
 
 The two independent GRUs intentionally use different contracts:
 
@@ -26,40 +26,35 @@ Maximum drift is deliberately the dominant factor, while persistence prevents on
 
 ## Leakage controls
 
-- Train, validation, and test entities are disjoint and time ordered.
+- Train, validation, test, and audit entities are disjoint with strict chronological boundaries.
 - Isolation Forests, GRU scalers, and both GRUs fit normal data only.
 - Daily-GRU training uses out-of-fold classifier probabilities: a row's RF features come from a classifier that did not train on that entity.
-- Validation chooses and freezes thresholds. The untouched test partition only reports results.
+- Validation chooses and freezes thresholds. Test and audit only report results; the independent demo corpus is never evaluation evidence.
 - Production telemetry contains no attack label; labels are evaluation-only sidecars.
 
-## Held-out comparison
+## Validation architecture comparison and audit result
 
-The seed-42 untouched test split contains 11,036 events from 60 unseen entities. Results from model version `v20260726-073744` are:
+The event-GRU architecture choice is made on a scenario-grouped validation selection partition, not on test or audit:
 
 | Measurement | Selected 32-feature event path | Rejected 42-input candidate |
 |---|---:|---:|
-| Event GRU PR-AUC | 73.98% | 43.96% |
-| Event GRU ROC-AUC | 97.43% | 98.24% |
-| Full behavioral ensemble PR-AUC | 80.67% | 81.24% |
-| Full behavioral recall | 73.73% | 77.97% |
-| Operational finding precision | 94.04% | 93.21% |
-| Operational finding recall | 86.86% | 87.29% |
-| Operational normal-event FPR | 0.12% | 0.14% |
+| Event GRU PR-AUC | 80.66% | 62.94% |
+| Event GRU ROC-AUC | 98.84% | 98.79% |
 
-The 42-input event GRU is **not an isolated improvement**: ROC-AUC rises slightly, but PR-AUC falls substantially. Although the full ensemble gains some recall because other evidence compensates, it pays a precision/FPR cost. The branch therefore activates the original 32-feature event path and retains the 42-input design only in the daily EntityBehaviorGRU, where it performs well.
+The enriched event GRU lowers PR-AUC, so the original 32-feature event path remains active and the 42-input design is retained only in the daily EntityBehaviorGRU.
 
-The separate daily path operates on 10,664 test entity-days with 1.16% anomalous-day prevalence:
+On the independent audit, the daily path operates on 9,967 entity-days with 1.29% anomalous-day prevalence:
 
 | Daily EntityBehaviorGRU metric | Result |
 |---|---:|
-| PR-AUC | 76.50% |
-| ROC-AUC | 98.66% |
-| Recall | 79.03% |
-| Precision | 49.00% |
-| Normal-day FPR | 0.97% |
+| PR-AUC | 75.12% |
+| ROC-AUC | 96.52% |
+| Recall | 76.74% |
+| Precision | 51.83% |
+| Normal-day FPR | 0.94% |
 | Top 1% ranked-entity precision | 100.00% |
-| Top-10 ranked-entity precision | 100.00% |
-| Top-10 ranked-entity recall | 90.91% |
+| Top-10 ranked-entity precision | 50.00% |
+| Top-10 ranked-entity recall | 83.33% |
 
 The daily threshold is selected on validation under a 1% normal-day FPR constraint and then frozen. These are synthetic-corpus results, not production guarantees.
 

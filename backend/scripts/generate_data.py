@@ -43,7 +43,8 @@ def namespace_rows(rows: list[LabeledEvent], split: str) -> list[LabeledEvent]:
 
 
 def generate(seed: int = 42, users_count: int = 400, events_per_user: int = 180,
-             scenarios_per_type: int | None = None, attack_rate: float = .01) -> dict:
+             scenarios_per_type: int | None = None, attack_rate: float = .01,
+             demo_entities: int = 60, audit_entities: int = 60) -> dict:
     if not .005 <= attack_rate <= .03:
         raise ValueError("attack_rate must be between 0.005 and 0.03")
     settings = get_settings(); rng = np.random.default_rng(seed)
@@ -54,18 +55,35 @@ def generate(seed: int = 42, users_count: int = 400, events_per_user: int = 180,
     now = datetime.now(timezone.utc)
     span_days = max(90, events_per_user)
     starts = {
-        "train": now - timedelta(days=3 * span_days + 30),
-        "validation": now - timedelta(days=2 * span_days + 20),
-        "test": now - timedelta(days=span_days + 10),
+        "train": now - timedelta(days=4 * span_days + 40),
+        "validation": now - timedelta(days=3 * span_days + 30),
+        "test": now - timedelta(days=2 * span_days + 20),
+        "audit": now - timedelta(days=span_days + 10),
     }
     for name, group in groups.items():
         normal = generate_normal(group, events_per_user, rng, start=starts[name])
         attacks = generate_attacks(group, normal, scenarios_per_type, rng, attack_rate)
         splits[name] = sorted(namespace_rows(normal + attacks, name), key=lambda row: row.event.timestamp)
 
-    test_attacks = [row for row in splits["test"] if row.label != "normal"]
-    test_normal = [row for row in splits["test"] if row.label == "normal"]
-    stream = sorted(test_attacks[-180:] + test_normal[-320:], key=lambda row: row.event.timestamp)
+    audit_rng = np.random.default_rng(seed + 10_007)
+    audit_group = build_users(audit_entities, audit_rng, start_index=users_count + demo_entities)
+    audit_normal = generate_normal(audit_group, events_per_user, audit_rng, start=starts["audit"])
+    splits["audit"] = sorted(namespace_rows(
+        audit_normal + generate_attacks(audit_group, audit_normal, scenarios_per_type, audit_rng, attack_rate), "audit"
+    ), key=lambda row: row.event.timestamp)
+    groups["audit"] = audit_group
+
+    demo_rng = np.random.default_rng(seed + 20_011)
+    demo_group = build_users(demo_entities, demo_rng, start_index=users_count)
+    demo_normal = generate_normal(demo_group, events_per_user, demo_rng, start=starts["audit"])
+    demo_attacks = generate_attacks(demo_group, demo_normal, scenarios_per_type, demo_rng, attack_rate)
+    demo_attacks = namespace_rows(demo_attacks, "demo"); demo_normal = namespace_rows(demo_normal, "demo")
+    stream = sorted(demo_attacks[-180:] + demo_normal[-320:], key=lambda row: row.event.timestamp)
+
+    ordered_names = ("train", "validation", "test", "audit")
+    for left, right in zip(ordered_names, ordered_names[1:]):
+        if max(row.event.timestamp for row in splits[left]) >= min(row.event.timestamp for row in splits[right]):
+            raise ValueError(f"Chronological boundary violation: {left} overlaps {right}")
     for name, rows in {**splits, "demo_stream": stream}.items(): write_split(settings.data_dir / "processed", name, rows)
     all_rows = sorted([row for rows in splits.values() for row in rows], key=lambda row: row.event.timestamp)
     write_split(settings.data_dir / "raw", "all_events", all_rows)
@@ -77,7 +95,7 @@ def generate(seed: int = 42, users_count: int = 400, events_per_user: int = 180,
                "attack_scenario_rate": round(
                    len({row.scenario_id for row in rows if row.label != "normal"}) /
                    max(len({row.event.session_id for row in rows if row.label == "normal"}), 1), 4),
-               "entities": len(groups.get(name, [])),
+               "entities": len(demo_group) if name == "demo_stream" else len(groups.get(name, [])),
                "labels": dict(sorted(Counter(row.label for row in rows).items()))}
         for name, rows in {**splits, "demo_stream": stream}.items()
     }
@@ -86,14 +104,24 @@ def generate(seed: int = 42, users_count: int = 400, events_per_user: int = 180,
         "schema": "deviance-synthetic-corpus-3",
         "feature_schema": "3.0.0",
         "seed": seed,
+        "audit_seed": seed + 10_007,
+        "demo_seed": seed + 20_011,
         "requested_entities": users_count,
+        "audit_entities": audit_entities,
+        "demo_entities": demo_entities,
         "normal_events_per_entity": events_per_user,
         "requested_attack_scenario_rate": attack_rate,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "splits": summary,
         "integrity": {
-            "entity_disjoint": not any(group_ids[left] & group_ids[right] for left, right in (
-                ("train", "validation"), ("train", "test"), ("validation", "test"))),
+            "entity_disjoint": not any(group_ids[left] & group_ids[right]
+                                       for index, left in enumerate(ordered_names)
+                                       for right in ordered_names[index + 1:]),
+            "strictly_chronological": all(
+                max(row.event.timestamp for row in splits[left]) < min(row.event.timestamp for row in splits[right])
+                for left, right in zip(ordered_names, ordered_names[1:])
+            ),
+            "demo_event_overlap": len({row.event.event_id for row in stream} & {row.event.event_id for row in all_rows}),
             "unique_event_ids": len({row.event.event_id for row in all_rows}) == len(all_rows),
         },
     }
@@ -109,5 +137,8 @@ if __name__ == "__main__":
     parser.add_argument("--scenarios-per-type", type=int)
     parser.add_argument("--attack-rate", type=float, default=.01,
                         help="Attack scenarios as a fraction of normal sessions (0.005-0.03)")
+    parser.add_argument("--demo-entities", type=int, default=60)
+    parser.add_argument("--audit-entities", type=int, default=60)
     args = parser.parse_args()
-    print(json.dumps(generate(args.seed, args.users, args.events_per_user, args.scenarios_per_type, args.attack_rate), indent=2))
+    print(json.dumps(generate(args.seed, args.users, args.events_per_user, args.scenarios_per_type,
+                              args.attack_rate, args.demo_entities, args.audit_entities), indent=2))

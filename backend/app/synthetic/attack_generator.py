@@ -146,9 +146,11 @@ def device_spoofing(entity: SyntheticEntity, base: AccessEvent, scenario: int,
 
 
 def low_slow_exfiltration(entity: SyntheticEntity, base: AccessEvent, scenario: int,
-                          rng: np.random.Generator | None = None) -> list[LabeledEvent]:
+                          rng: np.random.Generator | None = None,
+                          horizon_end: datetime | None = None) -> list[LabeledEvent]:
     rng = rng or np.random.default_rng(scenario); count = int(rng.integers(5, 11)); records = []
-    available = max(3600, int((datetime.now(timezone.utc) - timedelta(minutes=5) - base.timestamp).total_seconds()))
+    end = horizon_end or datetime.now(timezone.utc) - timedelta(minutes=5)
+    available = max(3600, int((end - base.timestamp).total_seconds()))
     desired_interval = int(rng.integers(7, 22)) * 86400
     interval = max(3600, min(desired_interval, available // max(count, 1)))
     for index in range(count):
@@ -193,8 +195,11 @@ def generate_attacks(entities: list[SyntheticEntity], normal: list[LabeledEvent]
         base = candidates[int(rng.integers(max(1, len(candidates) // 5), max(2, int(len(candidates) * .65))))]
         if label == "credential_stuffing":
             selected = list(rng.choice(entities, size=min(8, len(entities)), replace=False))
-            bases = [normal_by_entity[item.entity_id][int(rng.integers(0, len(normal_by_entity[item.entity_id])))] for item in selected]
+            bases = [normal_by_entity[item.entity_id][int(rng.integers(
+                0, max(1, int(len(normal_by_entity[item.entity_id]) * .65))))] for item in selected]
             generated = credential_stuffing(selected, bases, scenario, rng)
+        elif label == "low_slow_exfiltration":
+            generated = low_slow_exfiltration(entity, base, scenario, rng, max(row.event.timestamp for row in normal))
         else:
             generated = GENERATORS[label](entity, base, scenario, rng)
         attacks.extend(generated); scenario += 1

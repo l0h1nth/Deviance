@@ -1,6 +1,6 @@
 import {Bell,BrainCircuit,ChevronDown,ChevronsLeft,ChevronsRight,CircleHelp,GitCompareArrows,LayoutDashboard,LogOut,Moon,ShieldCheck,Sun,TrendingUp,Users} from 'lucide-react';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {api,authToken,type AuthUser} from './services/api';
+import {api,type AuthUser} from './services/api';
 import type {Alert,AlertDetail,AppNotification,BehaviorRankings,DriftResponse,DriftReviewAction,LiveEvent,Metrics,Page} from './types';
 import {Overview} from './pages/Overview';import {Alerts} from './pages/Alerts';import {Investigation} from './pages/Investigation';import {ModelPage} from './pages/Model';import {DriftPage} from './pages/Drift';import {BehaviorPage} from './pages/Behavior';import {UsersPage} from './pages/Users';import {Login} from './pages/Login';
 import {useLive,type StreamMessage,type StreamState} from './hooks/useLive';
@@ -33,7 +33,7 @@ export default function App(){
     }finally{refreshInFlight.current=false}
   },[]);
   const load=useCallback(()=>{void refreshRuntime();api.notifications().then(result=>setNotifications(result.notifications)).catch(()=>{});api.modelStatus().then(setModelStatus).catch(()=>{})},[refreshRuntime]);
-  useEffect(()=>{if(!authToken()){queueMicrotask(()=>setAuthReady(true));return}api.me().then(setUser).catch(()=>api.logout()).finally(()=>setAuthReady(true))},[]);
+  useEffect(()=>{api.me().then(setUser).catch(()=>{}).finally(()=>setAuthReady(true))},[]);
   useEffect(()=>{if(user){load();api.model().then(setModel).catch(()=>{});api.events().then(setLiveEvents).catch(()=>{})}},[load,user]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('deviance-clean-theme',theme)},[theme]);
   useEffect(()=>localStorage.setItem(COLLAPSE_KEY,String(collapsed)),[collapsed]);

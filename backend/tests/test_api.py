@@ -1,7 +1,9 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.config import Settings
 from app.main import app
 from helpers import event
 
@@ -17,22 +19,44 @@ def auth_headers(client: TestClient) -> dict[str, str]:
     return {"Authorization":f"Bearer {response.json()['access_token']}"}
 
 
+def test_production_rejects_demo_secrets():
+    with pytest.raises(RuntimeError, match="ADMIN_PASSWORD, AUTH_SECRET"):
+        Settings(environment="production").validate_security()
+    Settings(environment="production", admin_password="not-demo", auth_secret="a-long-random-secret").validate_security()
+
+
 def test_health_and_malformed_event():
     with TestClient(app) as client:
         assert client.get("/api/health").status_code==200
         assert client.get("/api/alerts").status_code==401
         assert client.post("/api/auth/login",json={"username":"admin","password":"wrong"}).status_code==401
         headers=auth_headers(client)
+        assert client.get("/api/auth/me").json()["role"]=="administrator"
         assert client.get("/api/auth/me",headers=headers).json()["role"]=="administrator"
         bad=payload();bad["latitude"]=999
         assert client.post("/api/events/ingest",json=bad,headers=headers).status_code==422
+
+
+def test_auth_uses_cookie_and_rejects_url_tokens():
+    with TestClient(app) as client:
+        login = client.post("/api/auth/login", json={"username":"admin","password":"admin"})
+        assert login.status_code == 200
+        assert "httponly" in login.headers["set-cookie"].lower()
+        token = login.json()["access_token"]
+        client.cookies.clear()
+        assert client.get(f"/api/alerts?token={token}").status_code == 401
+        assert client.post("/api/auth/logout").status_code == 401
+
+        auth_headers(client)
+        assert client.post("/api/auth/logout").status_code == 204
+        assert client.get("/api/auth/me").status_code == 401
 
 
 def test_model_api_exposes_cold_start_safety_metrics():
     with TestClient(app) as client:
         response = client.get("/api/metrics/model", headers=auth_headers(client))
         assert response.status_code == 200
-        cold = response.json()["metrics"]["test"]["cold_start_evaluation"]
+        cold = response.json()["metrics"]["audit"]["cold_start_evaluation"]
         assert cold["overall"]["normal_count"] > 0
         assert cold["attack_challenge"]["event_count"] > 0
         assert set(cold["attack_challenge"]["by_attack_class"]) == {

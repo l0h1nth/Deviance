@@ -9,7 +9,7 @@ from time import perf_counter
 
 import numpy as np
 from sklearn.metrics import accuracy_score, average_precision_score, classification_report, confusion_matrix, f1_score, roc_auc_score
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 
 from app.ml.anomaly_model import IsolationForestDetector
 from app.ml.attack_classifier import AttackClassifier
@@ -88,8 +88,9 @@ def load_split(event_path: Path, label_path: Path) -> list[LabeledEvent]:
 def featurize_splits(splits: dict[str, list[LabeledEvent]]) -> dict[str, tuple[np.ndarray, ...]]:
     pipeline, training_profiles = FeaturePipeline(), MemoryProfiles()
     result = {}
-    for split_name in ("train", "validation", "test"):
-        # Validation and test each begin from the same training-only priors, then
+    split_order = [name for name in ("train", "validation", "test", "audit") if name in splits]
+    for split_name in split_order:
+        # Validation, test, and audit each begin from the same training-only priors, then
         # evolve chronologically without consulting labels. This models online
         # adaptation while allowing anomalous traffic to contaminate the profile.
         profiles = training_profiles if split_name == "train" else deepcopy(training_profiles)
@@ -387,16 +388,18 @@ def tune_behavioral_threshold(bundle: ModelBundle, x: np.ndarray, y: np.ndarray,
             "selection_method": "maximize validation attack recall using normal-only evidence subject to <=0.25% normal-event FPR"}
 
 
-def validation_partitions(labels: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    calibration, selection, threshold = [], [], []
-    for label in np.unique(labels):
-        indices = np.flatnonzero(labels == label)
-        if len(indices) < 3:
-            calibration.extend(indices); selection.extend(indices); threshold.extend(indices)
-            continue
-        first = max(1, len(indices) // 3); second = min(len(indices) - 1, max(first + 1, 2 * len(indices) // 3))
-        calibration.extend(indices[:first]); selection.extend(indices[first:second]); threshold.extend(indices[second:])
-    return tuple(np.asarray(sorted(part), dtype=int) for part in (calibration, selection, threshold))
+def validation_partitions(labels: np.ndarray, scenarios: np.ndarray, seed: int = 42) -> tuple[np.ndarray, ...]:
+    """Keep every correlated multi-event scenario inside one validation purpose."""
+    labels, scenarios = np.asarray(labels), np.asarray(scenarios)
+    splitter = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=seed)
+    parts = [np.asarray(sorted(score), dtype=int)
+             for _, score in splitter.split(np.zeros((len(labels), 1)), labels, groups=scenarios)]
+    if len(parts) != 3 or any(not len(part) for part in parts):
+        raise ValueError("Three non-empty grouped validation partitions are required")
+    if any(set(scenarios[parts[left]]) & set(scenarios[parts[right]])
+           for left, right in ((0, 1), (0, 2), (1, 2))):
+        raise ValueError("Validation scenarios must not cross calibration, selection, and threshold partitions")
+    return tuple(parts)
 
 
 def classifier_metrics(classifier: AttackClassifier, x: np.ndarray, y: np.ndarray) -> dict:
@@ -422,7 +425,10 @@ def oof_classifier_probabilities(model_kind: str, scaled: np.ndarray, labels: np
         for local_index, class_name in enumerate(candidate.classes_):
             if str(class_name) in target_index:
                 result[score_indices, target_index[str(class_name)]] = probabilities[:, local_index]
-    return target_classifier.apply_calibration(result)
+    # These probabilities become downstream GRU training inputs. Applying the
+    # target classifier's validation-fitted calibrators here would leak validation
+    # labels backward into EntityBehaviorGRU training.
+    return result
 
 
 def sequence_metric(scores: np.ndarray, labels: np.ndarray) -> dict:
@@ -437,7 +443,7 @@ def sequence_metric(scores: np.ndarray, labels: np.ndarray) -> dict:
 def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int = 42,
           artifact_name: str = "current.joblib") -> ModelBundle:
     paths = {name: (data_dir / "processed" / f"{name}.jsonl", data_dir / "processed" / f"{name}_labels.jsonl")
-             for name in ("train", "validation", "test")}
+             for name in ("train", "validation", "test", "audit")}
     missing = [str(path) for pair in paths.values() for path in pair if not path.exists()]
     if missing: raise FileNotFoundError(f"Missing datasets: {missing}. Run generate_data.py first.")
     raw_splits = {name: load_split(*pair) for name, pair in paths.items()}
@@ -455,7 +461,7 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     scaler = build_scaler().fit(x_train[normal_mask]); scaled_train = scaler.transform(x_train)
     anomaly = IsolationForestDetector(contamination, seed).fit(scaled_train[normal_mask])
     val_x, val_y, val_entities, _, val_scenarios, val_criticality, val_history, val_baselines = featured["validation"]
-    calibration_indices, selection_indices, threshold_indices = validation_partitions(val_y)
+    calibration_indices, selection_indices, threshold_indices = validation_partitions(val_y, val_scenarios, seed)
     scaled_val = scaler.transform(val_x); candidate_models, candidate_results = {}, {}
     cold_x, cold_y, _, _, _, _ = cold_start_attack_vectors(raw_splits["train"], bootstrap_profiles)
     classifier_x = np.vstack([scaled_train, scaler.transform(cold_x)])
@@ -493,16 +499,21 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
 
     test_x, test_y, test_entities, _, test_scenarios, test_criticality, test_history, test_baselines = featured["test"]
     scaled_test = scaler.transform(test_x)
-    enriched_val = enrich_scaled(scaled_val, anomaly, classifier)
-    enriched_test = enrich_scaled(scaled_test, anomaly, classifier)
+    enriched_val = enrich_scaled(scaled_val, anomaly, classifier, calibrated=False)
+    enriched_test = enrich_scaled(scaled_test, anomaly, classifier, calibrated=False)
+    audit_x, audit_y, audit_entities, _, audit_scenarios, audit_criticality, audit_history, audit_baselines = featured["audit"]
+    scaled_audit = scaler.transform(audit_x)
+    enriched_audit = enrich_scaled(scaled_audit, anomaly, classifier, calibrated=False)
     ordered_rows = {name: sorted(raw_splits[name], key=lambda item: item.event.timestamp)
-                    for name in ("train", "validation", "test")}
+                    for name in ("train", "validation", "test", "audit")}
     daily_train = aggregate_daily(enriched_train, y_train, train_entities,
         np.asarray([row.event.timestamp for row in ordered_rows["train"]], dtype=object))
     daily_val = aggregate_daily(enriched_val, val_y, val_entities,
         np.asarray([row.event.timestamp for row in ordered_rows["validation"]], dtype=object))
     daily_test = aggregate_daily(enriched_test, test_y, test_entities,
         np.asarray([row.event.timestamp for row in ordered_rows["test"]], dtype=object))
+    daily_audit = aggregate_daily(enriched_audit, audit_y, audit_entities,
+        np.asarray([row.event.timestamp for row in ordered_rows["audit"]], dtype=object))
     daily_normal = daily_train.labels == "normal"
     entity_behavior_scaler = build_scaler().fit(daily_train.vectors[daily_normal])
     daily_train_scaled = entity_behavior_scaler.transform(daily_train.vectors)
@@ -518,14 +529,18 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         entity_behavior_scaler.transform(daily_test.vectors), daily_test.entities)
     entity_behavior_metrics = daily_evaluation(
         daily_test_scores, daily_test, entity_behavior_threshold)
-    active_test_scores = sequence.score_stream(scaled_test, test_entities)
-    enriched_test_scores = enriched_sequence_candidate.score_stream(
-        enriched_sequence_scaler.transform(enriched_test), test_entities)
+    daily_audit_scores = entity_behavior_detector.score_stream(
+        entity_behavior_scaler.transform(daily_audit.vectors), daily_audit.entities)
+    entity_behavior_audit_metrics = daily_evaluation(
+        daily_audit_scores, daily_audit, entity_behavior_threshold)
+    active_validation_scores = sequence.score_stream(scaled_val, val_entities)
+    enriched_validation_scores = enriched_sequence_candidate.score_stream(
+        enriched_sequence_scaler.transform(enriched_val), val_entities)
     sequence_comparison = {
-        "active_32_feature_gru": sequence_metric(active_test_scores, test_y),
-        "rejected_42_feature_gru": sequence_metric(enriched_test_scores, test_y),
+        "active_32_feature_gru": sequence_metric(active_validation_scores[selection_indices], val_y[selection_indices]),
+        "rejected_42_feature_gru": sequence_metric(enriched_validation_scores[selection_indices], val_y[selection_indices]),
         "selected": "active_32_feature_gru", "window_size": 12,
-        "comparison_split": "untouched_entity_disjoint_test",
+        "comparison_split": "scenario-grouped validation selection partition",
     }
     version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bundle = ModelBundle(version, FEATURE_SCHEMA_VERSION, FeaturePipeline.names, scaler, anomaly, sequence, classifier,
@@ -542,17 +557,23 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         bundle, val_x, val_y, val_entities, val_scenarios, val_criticality, val_history, val_baselines)
     test_metrics = evaluation_metrics(
         bundle, test_x, test_y, test_entities, test_scenarios, test_criticality, test_history, test_baselines)
+    audit_metrics = evaluation_metrics(
+        bundle, audit_x, audit_y, audit_entities, audit_scenarios, audit_criticality, audit_history, audit_baselines)
     test_metrics["cold_start_evaluation"]["attack_challenge"] = cold_start_attack_challenge(
         bundle, raw_splits["test"])
+    audit_metrics["cold_start_evaluation"]["attack_challenge"] = cold_start_attack_challenge(
+        bundle, raw_splits["audit"])
     bundle.metrics = {
         "validation": validation_metrics,
         "test": test_metrics,
+        "audit": audit_metrics,
         "threshold_selection": threshold_selection,
         "behavioral_threshold_selection": behavioral_threshold_selection,
         "classifier_selection": {"selected": selected_kind, "selection_partition": candidate_results,
                                   "policy": "highest validation macro F1; malicious PR-AUC tie-break"},
         "event_sequence_comparison": sequence_comparison,
         "entity_behavior": {"validation_threshold": daily_threshold_metrics, "test": entity_behavior_metrics,
+                            "audit": entity_behavior_audit_metrics,
                             "input_contract": "30-day sliding window of p95-aggregated 42-feature daily vectors",
                             "training": "normal daily sequences only; predict next observed day"},
         "risk_weights": bundle.risk_weights,
@@ -561,8 +582,9 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
             "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_32_feature_sequences_only",
             "entity_behavior_detector_fit": "normal_30_day_sequences_only",
             "classifier_fit": "normal_and_attack", "classifier_probability_calibration": "validation_sigmoid",
+            "entity_behavior_classifier_inputs": "training-only out-of-fold uncalibrated probabilities",
             "classifier_cold_start_attack_augmentation_rows": int(len(cold_y)),
-            "holdout_profile_policy": "training-seeded online profiles; validation/test labels never consulted"},
+            "holdout_profile_policy": "training-seeded online profiles; validation/test/audit labels never consulted"},
         "dataset": json.loads((data_dir / "processed" / "manifest.json").read_text())
             if (data_dir / "processed" / "manifest.json").exists() else {},
         "bootstrap_profiles": {"source": "normal_training_rows_only", "profile_count": len(bootstrap_profiles)},

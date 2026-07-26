@@ -3,21 +3,22 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from app.ml.training import featurize_splits, train
+from app.ml.training import featurize_splits, train, validation_partitions
 from app.synthetic.attack_generator import ATTACK_TYPES, generate_attacks
 from app.synthetic.normal_generator import build_users, generate_normal
 
 
 def test_training_pipeline(tmp_path):
-    rng=np.random.default_rng(7);entities=build_users(30,rng)
-    groups={"train":entities[:18],"validation":entities[18:24],"test":entities[24:]}
-    starts={"train":datetime.now(timezone.utc)-timedelta(days=390),
-            "validation":datetime.now(timezone.utc)-timedelta(days=260),
-            "test":datetime.now(timezone.utc)-timedelta(days=130)}
+    rng=np.random.default_rng(7);entities=build_users(36,rng)
+    groups={"train":entities[:18],"validation":entities[18:24],"test":entities[24:30],"audit":entities[30:]}
+    starts={"train":datetime.now(timezone.utc)-timedelta(days=520),
+            "validation":datetime.now(timezone.utc)-timedelta(days=390),
+            "test":datetime.now(timezone.utc)-timedelta(days=260),
+            "audit":datetime.now(timezone.utc)-timedelta(days=130)}
     splits={}
     for name,group in groups.items():
         normal=generate_normal(group,30,rng,start=starts[name])
-        splits[name]=sorted(normal+generate_attacks(group,normal,None,rng,.03),key=lambda row:row.event.timestamp)
+        splits[name]=sorted(normal+generate_attacks(group,normal,3,rng,.03),key=lambda row:row.event.timestamp)
     processed=tmp_path/"processed";models=tmp_path/"models";processed.mkdir();models.mkdir()
     for name,rows in splits.items():
         (processed/f"{name}.jsonl").write_text("".join(json.dumps(row.event.model_dump(mode="json"))+"\n" for row in rows))
@@ -25,6 +26,7 @@ def test_training_pipeline(tmp_path):
     bundle=train(tmp_path,models,seed=7)
     assert (models/"current.joblib").exists() and bundle.feature_schema_version=="3.0.0"
     assert bundle.metrics["test"]["sample_count"]==len(splits["test"])
+    assert bundle.metrics["audit"]["sample_count"]==len(splits["audit"])
     x_train,y_train,_,_,_,_,_,_=featurize_splits(splits)["train"];normal_mask=y_train=="normal"
     np.testing.assert_allclose(bundle.scaler.center_,np.median(x_train[normal_mask],axis=0))
     population=bundle.metrics["training_population"]
@@ -67,3 +69,16 @@ def test_insider_drift_is_a_benign_hard_negative():
     rows = generate_normal(build_users(24, rng), 180, rng)
     drift = [row for row in rows if row.scenario_id.startswith("insider_drift-")]
     assert drift and all(row.label == "normal" for row in drift)
+
+
+def test_validation_purposes_are_scenario_disjoint():
+    labels = np.asarray(["normal"] * 12 + ["brute_force"] * 6 + ["device_spoofing"] * 6)
+    scenarios = np.asarray(
+        [f"normal-{index}" for index in range(12)]
+        + [f"brute-{index // 2}" for index in range(6)]
+        + [f"spoof-{index // 2}" for index in range(6)]
+    )
+    partitions = validation_partitions(labels, scenarios, seed=11)
+    assert sorted(np.concatenate(partitions).tolist()) == list(range(len(labels)))
+    for left, right in ((0, 1), (0, 2), (1, 2)):
+        assert set(scenarios[partitions[left]]).isdisjoint(scenarios[partitions[right]])

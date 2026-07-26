@@ -10,7 +10,7 @@ Every login, API call, resource access, command, and device connection creates a
 
 ## Slide 3 — Synthetic environment
 
-400 entities; 73,591 train/validation/test events; users, service accounts, and edge devices; varied offices, shifts, stable IPs, devices, API routes/tokens, auth methods, protocols, commands, resources, transfers, and benign look-alikes. The six required multi-event attack patterns are injected at about 1% of sessions. Labels are offline sidecars only; insider drift is a normal-labeled edge case.
+400 train/validation/test entities, 60 new audit entities, and a separate 60-entity demo stream; users, service accounts, and edge devices; varied offices, shifts, IPs, devices, APIs, auth, protocols, commands, resources, transfers, and benign look-alikes. Six multi-event attack patterns are injected at about 1% of sessions. Labels are offline sidecars only.
 
 ## Slide 4 — Real-time and long-term models
 
@@ -18,7 +18,7 @@ A global Isolation Forest plus four signal-domain forests detect unusual 32-feat
 
 ## Slide 5 — No anomaly-label leakage
 
-The scaler, training profiles, Isolation Forest, and GRU fit normal training events only. Only the attack classifier sees attack labels. Train, validation, and test have no shared entities. Holdout profiles begin from training-only priors and update chronologically without label access. Validation calibrates probabilities and thresholds; test changes nothing.
+The scaler, training profiles, Isolation Forest, and GRU fit normal training events only. Only the attack classifier sees attack labels. Train, validation, test, and audit share neither entities nor time boundaries. Validation scenarios cannot cross calibration, selection, and threshold purposes. EntityBehaviorGRU receives training-only, entity-disjoint out-of-fold classifier probabilities. Test and audit change nothing; demo data is never evaluation evidence.
 
 ## Slide 6 — Explainable risk
 
@@ -34,7 +34,7 @@ New entities use peer/global baselines with explicit low confidence, and sequenc
 
 ## Slide 9 — Honest results
 
-Entity-disjoint test: 11,036 events with 2.14% attack rows. Accuracy is 99.68%, but Macro F1 is 92.80% and is more meaningful under imbalance. Operational precision is 94.04%, recall 86.86%, and normal-event FPR 0.12%. Behavioral-only PR-AUC is 80.67% with 73.73% attack recall. The daily identity model reaches 76.50% PR-AUC and 90.91% top-10 entity recall. Synthetic results are not production guarantees.
+Independent-seed audit: 11,033 later events from 60 unseen entities with 2.11% attack rows. Accuracy is 99.70%, but Macro F1 is 94.37% and is more meaningful under imbalance. Operational precision is 95.07%, recall 82.83%, and normal-event FPR 0.093%. Behavioral-only PR-AUC is 76.02%. The daily identity model reaches 75.12% PR-AUC and 83.33% top-10 entity recall. The audit still shares the synthetic generator family, so these are not production guarantees.
 
 ## Slide 10 — Live demo
 

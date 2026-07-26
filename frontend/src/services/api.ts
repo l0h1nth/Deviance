@@ -4,17 +4,16 @@ const BASE=import.meta.env.VITE_API_URL||'/api';
 const TOKEN_KEY='deviance-admin-token';
 export type AuthUser={username:string;role:string;display_name:string};
 
-export const authToken=()=>localStorage.getItem(TOKEN_KEY);
 async function request<T>(path:string,options?:RequestInit):Promise<T>{
-  const token=authToken();
-  const response=await fetch(`${BASE}${path}`,{...options,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{ }),...(options?.headers||{})}});
+  const response=await fetch(`${BASE}${path}`,{...options,credentials:'include',headers:{'Content-Type':'application/json',...(options?.headers||{})}});
   if(!response.ok){let detail=response.statusText;try{detail=(await response.json()).detail||detail}catch{}if(response.status===401&&path!='/auth/login')localStorage.removeItem(TOKEN_KEY);throw new Error(detail)}
+  if(response.status===204)return undefined as T;
   return response.json();
 }
 
 export const api={
-  login:async(username:string,password:string)=>{const result=await request<{access_token:string;user:AuthUser}>('/auth/login',{method:'POST',body:JSON.stringify({username,password})});localStorage.setItem(TOKEN_KEY,result.access_token);return result.user},
-  logout:()=>localStorage.removeItem(TOKEN_KEY),
+  login:async(username:string,password:string)=>{const result=await request<{access_token:string;user:AuthUser}>('/auth/login',{method:'POST',body:JSON.stringify({username,password})});localStorage.removeItem(TOKEN_KEY);return result.user},
+  logout:async()=>{try{await request('/auth/logout',{method:'POST'})}finally{localStorage.removeItem(TOKEN_KEY)}},
   me:()=>request<AuthUser>('/auth/me'),
   metrics:()=>request<Metrics>('/metrics/overview'),alerts:()=>request<Alert[]>('/alerts?limit=500'),alert:(id:number)=>request<AlertDetail>(`/alerts/${id}`),
   events:(limit=100)=>request<LiveEvent[]>(`/events?limit=${limit}`),latestEvent:()=>request<LiveEvent|null>('/events/latest'),
@@ -28,4 +27,4 @@ export const api={
   simulationStatus:()=>request<SimulationStatus>('/simulations/status'),stopSimulation:()=>request<SimulationStatus>('/simulations/stop',{method:'POST'}),
   notifications:()=>request<{notifications:AppNotification[]}>('/notifications'),
 };
-export const streamUrl=()=>`${BASE}/events/stream?token=${encodeURIComponent(authToken()||'')}`;
+export const streamUrl=()=>`${BASE}/events/stream`;

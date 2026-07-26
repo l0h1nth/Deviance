@@ -10,7 +10,7 @@ It implements the full hackathon brief: synthetic behavioral data, extreme class
 - The scaler, one global Isolation Forest, four signal-domain Isolation Forests, bundled cold-start profile priors, and both GRU sequence detectors learn only normal events.
 - Random Forest and XGBoost candidates learn normal plus the six required labeled attack types. A dedicated validation partition selects the stronger candidate, and separate validation data calibrates its probabilities.
 - Thirty-two behavioral features cover API/authentication windows, 30-day history, identity/device novelty, IP fan-out, travel, actions, ordered commands, entropy, privilege expansion, protocols, and cumulative transfers. The real-time anomaly path remains on this proven 32-value contract.
-- The event GRU uses a sliding 12-event window over the 32 engineered values. A separate `EntityBehaviorGRU` receives those 32 plus four Isolation Forest domain scores and six calibrated classifier probabilities, aggregates its 42 inputs by entity/day, uses a sliding 30-day window, and ranks identities by maximum drift, persistent drift days, top-three drift, and recency.
+- The event GRU uses a sliding 12-event window over the 32 engineered values. A separate `EntityBehaviorGRU` receives those 32 plus four Isolation Forest domain scores and six raw classifier probabilities, aggregates its 42 inputs by entity/day, uses a sliding 30-day window, and ranks identities by maximum drift, persistent drift days, top-three drift, and recency. Its training probabilities are entity-disjoint out-of-fold outputs, never validation-calibrated values.
 - Risk combines 30% domain/global anomaly evidence, 5% GRU sequence novelty, 25% classifier evidence, 35% profile deviation, and 5% resource criticality.
 - Behavioral anomalies are assigned to the closest required attack class while retaining honest classifier confidence; no extra classifier class is introduced.
 - A recall-oriented finding threshold is constrained by validation false positives; a second frozen threshold reserves the highest-risk one percent for priority triage.
@@ -28,11 +28,11 @@ Synthetic entity habits + injected scenarios
                  │
        unlabeled events + label sidecars
                  │
-     entity-disjoint chronological split
+ entity-disjoint strict chronological train → validation → test → audit
                  │
  normal-only scaler / IF / GRUs  +  labeled RF/XGBoost comparison
                  │
-        calibrated, versioned model bundle
+ frozen, versioned model bundle + untouched audit metrics
 
 LIVE
 Login / API / device telemetry
@@ -94,7 +94,7 @@ python backend/scripts/generate_data.py
 python backend/scripts/train_models.py --contamination 0.03
 ```
 
-The default seed-42 corpus contains 400 entities and 73,591 train/validation/test events: 72,000 normal events plus 1,591 attack events from scenarios injected at approximately 1% of normal sessions. The splits are entity-disjoint and chronological. `data/processed/manifest.json` records both scenario and event prevalence plus integrity checks.
+The default corpus contains 84,624 train/validation/test/audit events. The original 400 entities are split across train, validation, and test; 60 new entities from an independent seed form the audit corpus, and another 60 form a separate 500-event demo stream. The four evaluation splits are entity-disjoint with strict non-overlapping chronological boundaries. `data/processed/manifest.json` records prevalence, seeds, split sizes, unique IDs, and overlap checks.
 
 ## Run the application
 
@@ -122,7 +122,7 @@ Username: admin
 Password: admin
 ```
 
-Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `AUTH_SECRET` before any non-demo deployment.
+`admin/admin` is accepted only in development/demo/test. Any other environment refuses to start with the demo password or signing secret. Browser sessions use a `HttpOnly`, `SameSite=Strict` cookie and streaming tokens are never placed in URLs. Set `ENVIRONMENT=production`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `AUTH_SECRET`, and the allowed origins before deployment.
 
 ## Best judging demonstration
 
@@ -262,11 +262,11 @@ npm run build
 
 ## Current honest evaluation
 
-The seed-42 test split contains 11,036 events from 60 unseen entities with 2.14% attack events from scenarios injected at roughly 1% of sessions. Classifier accuracy is 99.68%, but the more informative Macro F1 is 92.80% because an always-normal prediction already achieves 97.86% accuracy. With the 32-feature event GRU restored, the operational layer reaches 94.04% precision and 86.86% recall at a 0.12% normal-event false-positive rate. Normal-only behavioral evidence reaches 80.67% PR-AUC and 73.73% recall. The retained daily behavior path reaches 76.50% PR-AUC and 79.03% recall at a 0.97% normal-day FPR.
+The frozen pipeline is reported on the independent-seed audit split: 11,033 later events from 60 unseen entities, including 233 attacks (2.11%). Classifier accuracy is 99.70%, but imbalance-aware Macro F1 is 94.37%. The operational layer reaches 95.07% precision and 82.83% recall with 10 false positives among 10,800 normal events: a 0.093% normal-event FPR. Normal-only behavioral evidence reaches 76.02% PR-AUC and 52.36% event recall at a frozen threshold. The daily identity path reaches 75.12% PR-AUC, 76.74% recall, and 0.94% normal-day FPR; five of six attacked audit identities appear in its top ten.
 
-The rejected enriched event GRU reaches only 43.96% PR-AUC versus 73.98% for the selected 32-feature event path, even though ROC-AUC rises from 97.43% to 98.24%. The result is retained as comparison evidence, but the 42-input candidate is not used during real-time inference.
+The event-GRU architecture decision was made only on the scenario-grouped validation selection partition: the selected 32-feature path reaches 80.66% PR-AUC versus 62.94% for the rejected enriched candidate. The audit corpus does not select a model, calibrate probabilities, tune weights, or choose thresholds.
 
-Validation selected Random Forest over XGBoost. All scores remain generator-dependent rather than production guarantees. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, confusion matrices, class support, candidate selection, and limitations.
+Validation selected Random Forest over XGBoost. The demo stream is disjoint from the audit corpus and is never evaluation evidence. All scores still share the same synthetic generator family and are not production guarantees. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for definitions, confusion matrices, class support, candidate selection, and limitations.
 
 ## Production boundaries
 

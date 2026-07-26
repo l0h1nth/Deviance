@@ -27,7 +27,7 @@ class BehaviorRankingService:
             return None, None
         base = np.asarray([[row.features.get(name, 0.0) for name in self.bundle.feature_names] for row in rows])
         scaled = self.bundle.scaler.transform(base)
-        enriched = enrich_scaled(scaled, self.bundle.anomaly_detector, self.bundle.attack_classifier)
+        enriched = enrich_scaled(scaled, self.bundle.anomaly_detector, self.bundle.attack_classifier, calibrated=False)
         labels = np.asarray(["normal"] * len(rows))
         entities = np.asarray([row.event.entity_id for row in rows])
         timestamps = np.asarray([row.event.timestamp for row in rows], dtype=object)

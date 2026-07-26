@@ -19,8 +19,10 @@ def enriched_names(base_names: list[str]) -> list[str]:
 
 
 def aligned_attack_probabilities(classifier: AttackClassifier, scaled: np.ndarray,
-                                 probabilities: np.ndarray | None = None) -> np.ndarray:
-    values = classifier.probabilities(scaled) if probabilities is None else np.asarray(probabilities, dtype=float)
+                                 probabilities: np.ndarray | None = None,
+                                 calibrated: bool = True) -> np.ndarray:
+    values = (classifier.probabilities(scaled) if calibrated else classifier.model.predict_proba(scaled)) \
+        if probabilities is None else np.asarray(probabilities, dtype=float)
     class_index = {str(name): index for index, name in enumerate(classifier.classes_)}
     return np.column_stack([
         values[:, class_index[name]] if name in class_index else np.zeros(len(scaled))
@@ -29,9 +31,9 @@ def aligned_attack_probabilities(classifier: AttackClassifier, scaled: np.ndarra
 
 
 def enrich_scaled(scaled: np.ndarray, anomaly: IsolationForestDetector, classifier: AttackClassifier,
-                  probabilities: np.ndarray | None = None) -> np.ndarray:
+                  probabilities: np.ndarray | None = None, calibrated: bool = True) -> np.ndarray:
     scaled = np.atleast_2d(np.asarray(scaled, dtype=float))
     domains = anomaly.domain_scores(scaled)
     domain_matrix = np.column_stack([domains.get(name, np.zeros(len(scaled))) for name in IF_DOMAIN_NAMES])
-    attacks = aligned_attack_probabilities(classifier, scaled, probabilities)
+    attacks = aligned_attack_probabilities(classifier, scaled, probabilities, calibrated)
     return np.column_stack([scaled, domain_matrix, attacks])

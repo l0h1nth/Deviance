@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     def allowed_origins(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
 
+    def validate_security(self) -> None:
+        if self.environment.lower() in {"development", "demo", "test"}:
+            return
+        insecure = []
+        if self.admin_password == "admin": insecure.append("ADMIN_PASSWORD")
+        if self.auth_secret == "deviance-hackathon-change-me": insecure.append("AUTH_SECRET")
+        if insecure:
+            raise RuntimeError(f"Production requires secure environment values for {', '.join(insecure)}")
+
 
 @lru_cache
 def get_settings() -> Settings:

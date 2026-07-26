@@ -16,14 +16,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = get_settings(); settings.data_dir.mkdir(parents=True, exist_ok=True); settings.model_dir.mkdir(parents=True, exist_ok=True)
+    settings = get_settings(); settings.validate_security(); settings.data_dir.mkdir(parents=True, exist_ok=True); settings.model_dir.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine); yield
 
 
 settings = get_settings()
 app = FastAPI(title="Deviance API", version="3.0.0", lifespan=lifespan,
               description="ML-first behavioral anomaly detection for access telemetry")
-app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_origins, allow_credentials=False,
+app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_origins, allow_credentials=True,
                    allow_methods=["GET", "POST", "PATCH", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])
 
 
@@ -34,7 +34,7 @@ async def request_size_limit(request: Request, call_next):
     protected = request.url.path.startswith("/api/") and request.url.path not in {"/api/health", "/api/auth/login"}
     if protected and request.method != "OPTIONS":
         authorization = request.headers.get("authorization", "")
-        token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else request.query_params.get("token", "")
+        token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else request.cookies.get("deviance_session", "")
         payload = AuthService().verify_token(token)
         if not payload: return JSONResponse({"detail": "Authentication required"}, 401)
         request.state.user = payload

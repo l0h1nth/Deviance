@@ -28,9 +28,10 @@ def fingerprint(seed: str) -> str:
     return sha256(seed.encode()).hexdigest()[:24]
 
 
-def build_users(count: int, rng: np.random.Generator) -> list[SyntheticEntity]:
+def build_users(count: int, rng: np.random.Generator, start_index: int = 0) -> list[SyntheticEntity]:
     entities = []
-    for i in range(count):
+    for offset in range(count):
+        i = start_index + offset
         kind_roll = rng.random()
         entity_type = "user" if kind_roll < .76 else "service_account" if kind_roll < .91 else "edge_device"
         office = OFFICES[i % len(OFFICES)]
