@@ -1,6 +1,6 @@
-# Phase 2 — Governed Concept Drift
+# Governed Concept Drift
 
-Phase 2 handles legitimate behavioral change without teaching the system that suspicious activity is normal. It is separate from attack classification: a drift finding means a trusted distribution changed, not that an intrusion occurred.
+The governed concept-drift workflow handles legitimate behavioral change without teaching the system that suspicious activity is normal. It is separate from attack classification: a drift finding means a trusted distribution changed, not that an intrusion occurred.
 
 ## Runtime lifecycle
 
@@ -110,4 +110,4 @@ For the live demo, start a `concept_drift` simulation with exactly 40 events. Th
 
 ## Known boundary
 
-This phase demonstrates entity-level numeric drift on synthetic telemetry. A production deployment would add cohort-level feature/schema drift, multiple-testing control, seasonal reference windows, durable streaming state such as Redis or a feature store, RBAC-separated approval, and shadow-model evaluation before any retrained artifact could be promoted.
+This implementation demonstrates entity-level numeric drift on synthetic telemetry. A production deployment would add cohort-level feature/schema drift, multiple-testing control, seasonal reference windows, durable streaming state such as Redis or a feature store, RBAC-separated approval, and shadow-model evaluation before any retrained artifact could be promoted.

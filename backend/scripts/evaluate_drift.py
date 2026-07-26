@@ -1,4 +1,4 @@
-"""Reproducible Phase 2 benchmark for the trusted-window drift detector."""
+"""Reproducible benchmark for the trusted-window drift detector."""
 
 import argparse
 import json

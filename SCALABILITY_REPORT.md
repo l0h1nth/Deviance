@@ -1,4 +1,4 @@
-# Phase 3 system design and scalability
+# System Design and Scalability
 
 ## What is implemented
 

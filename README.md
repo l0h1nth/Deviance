@@ -145,13 +145,13 @@ Simulation playback time is deliberately separate from security-event time. Choo
 6. Restart the backend and return to **Drift monitor** to verify that window progress and dispositions survive process restarts.
 7. Use `insider_drift` separately as the legitimate edge-case/false-positive demonstration. It is not an attack classifier output and is not the deterministic concept-drift trigger.
 
-Run the deterministic Phase 2 benchmark with:
+Run the deterministic concept-drift benchmark with:
 
 ```bash
 .venv/bin/python backend/scripts/evaluate_drift.py --stable-entities 100 --drift-entities 100
 ```
 
-The benchmark reports entity-level drift precision/recall, stable-entity false-positive rate, detection delay, and the enforced adaptation safety contract. See [Phase 2 concept drift](docs/PHASE2_CONCEPT_DRIFT.md) for the complete lifecycle.
+The benchmark reports entity-level drift precision/recall, stable-entity false-positive rate, detection delay, and the enforced adaptation safety contract. See [Concept drift governance](docs/CONCEPT_DRIFT_GOVERNANCE.md) for the complete lifecycle.
 
 The experimental daily behavioral-risk path and its held-out comparison are documented in [Behavioral drift experiment](docs/BEHAVIORAL_DRIFT_EXPERIMENT.md).
 
@@ -233,7 +233,7 @@ python backend/scripts/benchmark_inference.py --events 1000 --warmup 100
 python backend/scripts/benchmark_system.py --events 60 --concurrency 1,4,8
 ```
 
-The Phase 3 benchmark starts a real Uvicorn server against a fresh temporary SQLite-WAL database. It measures authenticated TCP HTTP, validation, feature extraction, IF/GRU/RF inference, transaction persistence, response serialization, concurrent entity-partition queues, and expected failure handling.
+The end-to-end scalability benchmark starts a real Uvicorn server against a fresh temporary SQLite-WAL database. It measures authenticated TCP HTTP, validation, feature extraction, IF/GRU/RF inference, transaction persistence, response serialization, concurrent entity-partition queues, and expected failure handling.
 
 | Concurrent queues | HTTP P50 | P95 | P99 | Throughput | Successful |
 |---:|---:|---:|---:|---:|---:|

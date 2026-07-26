@@ -51,7 +51,7 @@ def load_payloads(count: int) -> list[dict]:
     with path.open() as handle:
         for line in handle:
             if line.strip():
-                payload = json.loads(line); payload["event_id"] = f"phase3-{uuid4().hex}"
+                payload = json.loads(line); payload["event_id"] = f"system-benchmark-{uuid4().hex}"
                 payloads.append(payload)
                 if len(payloads) >= count: break
     if len(payloads) < count:
@@ -78,7 +78,7 @@ async def exercise(base_url: str, payloads: list[dict], concurrency: int) -> dic
     async with httpx.AsyncClient(base_url=base_url, timeout=90, limits=limits) as client:
         login = await client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
         login.raise_for_status(); headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-        warmup = dict(payloads[0]); warmup["event_id"] = f"phase3-warmup-{uuid4().hex}"
+        warmup = dict(payloads[0]); warmup["event_id"] = f"system-benchmark-warmup-{uuid4().hex}"
         warmup_response = await client.post("/api/events/ingest", json=warmup, headers=headers)
         warmup_response.raise_for_status(); model_version = warmup_response.json()["model_version"]
 
@@ -108,7 +108,7 @@ async def exercise(base_url: str, payloads: list[dict], concurrency: int) -> dic
         wall_seconds = perf_counter() - started
 
         duplicate = await client.post("/api/events/ingest", json=warmup, headers=headers)
-        invalid = dict(warmup); invalid["event_id"] = f"phase3-invalid-{uuid4().hex}"; invalid["latitude"] = 999
+        invalid = dict(warmup); invalid["event_id"] = f"system-benchmark-invalid-{uuid4().hex}"; invalid["latitude"] = 999
         malformed = await client.post("/api/events/ingest", json=invalid, headers=headers)
         unauthorized = await client.post("/api/events/ingest", json=invalid)
 
@@ -148,7 +148,7 @@ async def exercise(base_url: str, payloads: list[dict], concurrency: int) -> dic
 def run(event_count: int, concurrency: int, port: int = 0) -> dict:
     if event_count < 1 or concurrency < 1: raise ValueError("events and concurrency must be positive")
     payloads = load_payloads(event_count); port = port or available_port(); base_url = f"http://127.0.0.1:{port}"
-    with tempfile.TemporaryDirectory(prefix="deviance-phase3-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="deviance-system-benchmark-") as temporary:
         environment = dict(os.environ)
         environment.update(DATABASE_URL=f"sqlite:///{Path(temporary) / 'benchmark.db'}",
                            PYTHONPATH=str(BACKEND), ENVIRONMENT="benchmark",
@@ -180,7 +180,7 @@ def run(event_count: int, concurrency: int, port: int = 0) -> dict:
 def run_matrix(event_count: int, concurrency_levels: list[int]) -> dict:
     runs = [run(event_count, concurrency) for concurrency in concurrency_levels]
     result = {
-        "benchmark": "Phase 3 concurrent end-to-end HTTP ingestion",
+        "benchmark": "Concurrent end-to-end HTTP ingestion",
         "events_per_run": event_count,
         "concurrency_levels": concurrency_levels,
         "runs": runs,
