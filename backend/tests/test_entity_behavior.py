@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from app.ml.entity_behavior import aggregate_daily, identity_rankings
+from app.ml.entity_behavior import DailyBehaviorBatch, aggregate_daily, daily_evaluation, identity_rankings
 
 
 def test_daily_aggregation_is_entity_and_calendar_day_safe():
@@ -25,3 +25,15 @@ def test_rankings_prioritize_maximum_and_persistent_drift():
     assert rankings[0]["entity_id"] == "high"
     assert rankings[0]["maximum_drift_30d"] == 1.0
     assert next(item for item in rankings if item["entity_id"] == "steady")["drift_days_30d"] == 3
+
+
+def test_daily_ranking_metrics_use_same_latest_30_day_horizon():
+    days = np.asarray([f"2026-01-{day:02d}" for day in range(1, 32)] + ["2026-01-31"])
+    entities = np.asarray(["old-attack"] * 31 + ["recent-attack"])
+    labels = np.asarray(["brute_force", *(["normal"] * 30), "brute_force"])
+    scores = np.asarray([.99, *([.01] * 30), .98])
+    batch = DailyBehaviorBatch(np.zeros((32, 1)), labels, entities, days, np.ones(32, dtype=int))
+    metrics = daily_evaluation(scores, batch, .9)
+    assert metrics["attacked_entity_count"] == 1
+    assert metrics["top_10_precision"] == .5
+    assert metrics["top_10_recall"] == 1.0

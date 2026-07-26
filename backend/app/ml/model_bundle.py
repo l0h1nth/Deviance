@@ -47,11 +47,13 @@ class ModelBundle:
         }
         probabilities = self.attack_classifier.probabilities(scaled)[0]
         class_probabilities = {str(name): float(value) for name, value in zip(self.attack_classifier.classes_, probabilities)}
+        enriched_vector = enrich_scaled(
+            scaled, self.anomaly_detector, self.attack_classifier, probabilities.reshape(1, -1)
+        )[0]
         previous_scaled = self.scaler.transform(previous_vectors) if previous_vectors is not None and len(previous_vectors) else np.empty((0, len(vector)))
         sequence_width = getattr(self.sequence_detector, "source_input_size", len(vector))
         if sequence_width > len(vector):
-            current_sequence = enrich_scaled(scaled, self.anomaly_detector, self.attack_classifier,
-                                             probabilities.reshape(1, -1))[0]
+            current_sequence = enriched_vector
             previous_sequence = enrich_scaled(previous_scaled, self.anomaly_detector, self.attack_classifier) if len(previous_scaled) else np.empty((0, sequence_width))
             sequence_scaler = getattr(self, "event_sequence_scaler", None)
             if sequence_scaler is not None:
@@ -80,7 +82,7 @@ class ModelBundle:
         return {"anomaly_score": anomaly_score, "sequence_anomaly_score": sequence_anomaly_score, "predicted_attack": predicted,
                 "classifier_confidence": confidence, "class_probabilities": class_probabilities,
                 "behavioral_score": behavior, "domain_anomaly_scores": domain_anomaly_scores,
-                "scaled_vector": scaled[0], "enriched_vector": current_sequence,
+                "scaled_vector": scaled[0], "enriched_vector": enriched_vector,
                 "enriched_feature_names": getattr(self, "enriched_feature_names", None) or enriched_names(self.feature_names)}
 
     def save(self, path: Path) -> None:

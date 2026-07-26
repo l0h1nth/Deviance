@@ -476,16 +476,20 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
     oof_probabilities = oof_classifier_probabilities(
         selected_kind, scaled_train, y_train, train_entities, classifier, seed)
     enriched_train = enrich_scaled(scaled_train, anomaly, classifier, oof_probabilities)
-    event_sequence_scaler = build_scaler().fit(enriched_train[normal_mask])
-    event_sequence_train = event_sequence_scaler.transform(enriched_train)
+    # Keep the real-time anomaly path on the proven 32-feature contract. It
+    # reconstructs the sequence-sensitive subset while accepting the complete
+    # engineered event vector. The enriched candidate is retained only for an
+    # apples-to-apples held-out comparison; it is not activated in the bundle.
     sequence = GRUSequenceDetector(
-        len(enriched_names(FeaturePipeline.names)), hidden_size=40, window_size=12,
-        error_top_k=7, random_state=seed, minimum_history=3,
-    ).fit(event_sequence_train, y_train, train_entities)
-    legacy_sequence = GRUSequenceDetector(
         len(FeaturePipeline.names), random_state=seed,
         feature_indices=FeaturePipeline.sequence_feature_indices,
     ).fit(scaled_train, y_train, train_entities)
+    enriched_sequence_scaler = build_scaler().fit(enriched_train[normal_mask])
+    enriched_sequence_train = enriched_sequence_scaler.transform(enriched_train)
+    enriched_sequence_candidate = GRUSequenceDetector(
+        len(enriched_names(FeaturePipeline.names)), hidden_size=40, window_size=12,
+        error_top_k=7, random_state=seed, minimum_history=3,
+    ).fit(enriched_sequence_train, y_train, train_entities)
 
     test_x, test_y, test_entities, _, test_scenarios, test_criticality, test_history, test_baselines = featured["test"]
     scaled_test = scaler.transform(test_x)
@@ -514,18 +518,20 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         entity_behavior_scaler.transform(daily_test.vectors), daily_test.entities)
     entity_behavior_metrics = daily_evaluation(
         daily_test_scores, daily_test, entity_behavior_threshold)
-    legacy_test_scores = legacy_sequence.score_stream(scaled_test, test_entities)
-    enriched_test_scores = sequence.score_stream(event_sequence_scaler.transform(enriched_test), test_entities)
+    active_test_scores = sequence.score_stream(scaled_test, test_entities)
+    enriched_test_scores = enriched_sequence_candidate.score_stream(
+        enriched_sequence_scaler.transform(enriched_test), test_entities)
     sequence_comparison = {
-        "current_16_feature_gru": sequence_metric(legacy_test_scores, test_y),
-        "enriched_42_feature_gru": sequence_metric(enriched_test_scores, test_y),
-        "window_size": 12, "comparison_split": "untouched_entity_disjoint_test",
+        "active_32_feature_gru": sequence_metric(active_test_scores, test_y),
+        "rejected_42_feature_gru": sequence_metric(enriched_test_scores, test_y),
+        "selected": "active_32_feature_gru", "window_size": 12,
+        "comparison_split": "untouched_entity_disjoint_test",
     }
     version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
     bundle = ModelBundle(version, FEATURE_SCHEMA_VERSION, FeaturePipeline.names, scaler, anomaly, sequence, classifier,
                          50.0, {}, bootstrap_profiles, DEFAULT_RISK_WEIGHTS.as_dict(), .85, 70.0,
                          {"selected": selected_kind, "validation": candidate_results},
-                         event_sequence_scaler, entity_behavior_scaler, entity_behavior_detector, entity_behavior_threshold,
+                         None, entity_behavior_scaler, entity_behavior_detector, entity_behavior_threshold,
                          enriched_names(FeaturePipeline.names))
     behavioral_threshold_selection = tune_behavioral_threshold(
         bundle, val_x[threshold_indices], val_y[threshold_indices], val_entities[threshold_indices])
@@ -552,7 +558,7 @@ def train(data_dir: Path, model_dir: Path, contamination: float = .03, seed: int
         "risk_weights": bundle.risk_weights,
         "training_population": {"total_rows": int(len(y_train)), "normal_rows": int(np.sum(normal_mask)),
             "attack_rows": int(np.sum(~normal_mask)), "preprocessor_fit": "normal_only",
-            "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_42_feature_sequences_only",
+            "anomaly_detector_fit": "normal_only", "sequence_detector_fit": "normal_32_feature_sequences_only",
             "entity_behavior_detector_fit": "normal_30_day_sequences_only",
             "classifier_fit": "normal_and_attack", "classifier_probability_calibration": "validation_sigmoid",
             "classifier_cold_start_attack_augmentation_rows": int(len(cold_y)),

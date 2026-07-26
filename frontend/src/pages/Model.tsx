@@ -45,7 +45,7 @@ export function ModelPage({model}:{model:any}){
 
     <section className="panel model-card"><h2>Active v3 ensemble</h2><dl>
       <div><dt>Model version</dt><dd>{model?.model_version||'Not trained'}</dd></div>
-      <div><dt>Feature contract</dt><dd>{model?.feature_names?.length||0} engineered signals · {model?.enriched_feature_names?.length||0} GRU inputs · schema {model?.feature_schema_version||'—'}</dd></div>
+      <div><dt>Feature contract</dt><dd>{model?.feature_names?.length||0} event inputs · {model?.enriched_feature_names?.length||0} daily inputs · schema {model?.feature_schema_version||'—'}</dd></div>
       <div><dt>Anomaly layer</dt><dd>{model?.anomaly_model?.type||'Domain Isolation Forest ensemble'} · {(model?.anomaly_model?.domains||[]).length} domains</dd></div>
       <div><dt>Event sequence layer</dt><dd>{model?.sequence_model?.type||'GRU sequence detector'} · {model?.sequence_model?.source_input_size||model?.feature_names?.length||32} inputs · {model?.sequence_model?.window_size||12} events</dd></div>
       <div><dt>Daily behavior layer</dt><dd>{model?.entity_behavior_model?`${model.entity_behavior_model.type} · ${model.entity_behavior_model.source_input_size} inputs · ${model.entity_behavior_model.window_size} days`:'Not available'}</dd></div>
@@ -54,15 +54,17 @@ export function ModelPage({model}:{model:any}){
       <div><dt>Training policy</dt><dd>Scaler, domain IFs, and GRU: normal only · classifier: labeled classes</dd></div>
     </dl></section>
 
-    {sequenceComparison.enriched_42_feature_gru&&<section className="panel threshold-card"><div className="panel-title"><div><span>BEHAVIORAL-DRIFT EXPERIMENT</span><h2>Held-out architecture comparison</h2></div><strong>Entity-disjoint test split</strong></div><dl className="budget-grid">
-      <div><dt>Legacy 16-input GRU PR-AUC</dt><dd>{percent(sequenceComparison.current_16_feature_gru?.pr_auc)}</dd></div>
-      <div><dt>Enriched 42-input GRU PR-AUC</dt><dd>{percent(sequenceComparison.enriched_42_feature_gru?.pr_auc)}</dd></div>
-      <div><dt>Legacy GRU ROC-AUC</dt><dd>{percent(sequenceComparison.current_16_feature_gru?.roc_auc)}</dd></div>
-      <div><dt>Enriched GRU ROC-AUC</dt><dd>{percent(sequenceComparison.enriched_42_feature_gru?.roc_auc)}</dd></div>
+    {sequenceComparison.rejected_42_feature_gru&&<section className="panel threshold-card"><div className="panel-title"><div><span>BEHAVIORAL-DRIFT EXPERIMENT</span><h2>Held-out architecture comparison</h2></div><strong>32-input event path selected</strong></div><dl className="budget-grid">
+      <div><dt>Active 32-input GRU PR-AUC</dt><dd>{percent(sequenceComparison.active_32_feature_gru?.pr_auc)}</dd></div>
+      <div><dt>Rejected 42-input GRU PR-AUC</dt><dd>{percent(sequenceComparison.rejected_42_feature_gru?.pr_auc)}</dd></div>
+      <div><dt>Active GRU ROC-AUC</dt><dd>{percent(sequenceComparison.active_32_feature_gru?.roc_auc)}</dd></div>
+      <div><dt>Rejected GRU ROC-AUC</dt><dd>{percent(sequenceComparison.rejected_42_feature_gru?.roc_auc)}</dd></div>
       <div><dt>Daily drift PR-AUC</dt><dd>{percent(entityBehavior.pr_auc)}</dd></div>
       <div><dt>Daily drift recall</dt><dd>{percent(entityBehavior.recall)}</dd></div>
       <div><dt>Daily drift FPR</dt><dd>{percent(entityBehavior.false_positive_rate)}</dd></div>
       <div><dt>Ranked identities</dt><dd>{entityBehavior.ranked_entity_count??'—'}</dd></div>
+      <div><dt>Top-10 identity precision</dt><dd>{percent(entityBehavior.top_10_precision)}</dd></div>
+      <div><dt>Top-10 identity recall</dt><dd>{percent(entityBehavior.top_10_recall)}</dd></div>
     </dl></section>}
 
     <section className="panel threshold-card"><div className="panel-title"><div><span>DUAL DECISION POLICY</span><h2>Find broadly, prioritize narrowly</h2></div><strong>{number(model?.alert_threshold)} finding · {number(model?.priority_threshold)} priority</strong></div><dl className="budget-grid">

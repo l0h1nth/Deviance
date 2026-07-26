@@ -96,12 +96,18 @@ def daily_evaluation(scores: np.ndarray, batch: DailyBehaviorBatch, threshold: f
     except ValueError:
         pr_auc = roc_auc = 0.0
     rankings = identity_rankings(scores, batch.labels, batch.entities, batch.days, threshold)
-    attacked = {str(entity) for entity in batch.entities[binary]}
+    # Entity ranking covers the latest 30 observed days, so ranking ground truth
+    # must use that same horizon rather than every attack in the full holdout.
+    attacked = {item["entity_id"] for item in rankings if item["has_attack"]}
     top_count = max(1, int(np.ceil(len(rankings) * .01))); top = rankings[:top_count]
+    top_ten = rankings[:min(10, len(rankings))]
+    top_ten_hits = sum(item["entity_id"] in attacked for item in top_ten)
     return {"daily_count": len(scores), "attack_day_prevalence": float(np.mean(binary)),
             "pr_auc": pr_auc, "roc_auc": roc_auc, "threshold": threshold,
             "precision": tp / max(tp + fp, 1), "recall": tp / max(tp + fn, 1),
             "false_positive_rate": fp / max(fp + tn, 1),
             "ranked_entity_count": len(rankings), "attacked_entity_count": len(attacked),
             "top_1_percent_precision": sum(item["entity_id"] in attacked for item in top) / len(top),
+            "top_10_precision": top_ten_hits / max(len(top_ten), 1),
+            "top_10_recall": top_ten_hits / max(len(attacked), 1),
             "rankings": rankings}
