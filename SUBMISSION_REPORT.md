@@ -10,18 +10,18 @@ Traditional signatures recognize known bad artifacts. Deviance instead learns ha
 |---|---|
 | Synthetic generator | 400 mixed entity types, 32 derived dimensions, API-aware benign hard negatives, six required randomized attacks at ~1% of sessions |
 | Normal baseline | Entity/device/peer/global profiles; normal-only robust scaler and global plus four domain Isolation Forests |
-| Sequence detection | Normal-only twelve-event GRU reconstruction detector using sparse residuals |
+| Sequence detection | Normal-only twelve-event event GRU plus 30-day EntityBehaviorGRU identity ranking |
 | Attack classification | Validation selection between balanced Random Forest and regularized XGBoost, followed by sigmoid calibration over only the required classes |
 | Explainability | Feature value, expected baseline, deviation, risk components, rationale, and action guidance |
 | Analyst dashboard | Ranked incident queue, live SSE, investigation, entity timeline, model governance, drift, dispositions |
 | Cold start | Peer/global baseline confidence plus sequence warm-up policy |
 | Concept drift | Trusted rolling windows, review records, concept and insider simulations |
-| Scalability | Entity partitioning design and repeatable latency/throughput benchmark |
+| Scalability | Durable sequence/drift state, entity-keyed partition contract, concurrent full-HTTP benchmark and production substitutions |
 | Report/presentation | This report, model evaluation, architecture, scalability report, and presentation script |
 
 ## Evaluation against judging criteria
 
-Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. Accuracy is 99.72%, while imbalance-aware Macro F1 is 93.46%. The operational layer reaches 93.98% precision, 86.02% recall, 0.12% normal-event FPR, and 100% attack-scenario recall.
+Detection accuracy is reported on a chronological, entity-disjoint test set rather than a random row split. Accuracy is 99.68%, while imbalance-aware Macro F1 is 92.80%. The operational layer reaches 94.04% precision, 86.86% recall and 0.12% normal-event FPR.
 
 Attack scenarios are injected at 1% of normal sessions, producing 2.14% test attack rows. The normal-only behavioral layer reaches 80.67% PR-AUC and 73.73% recall. Insider drift remains normal ground truth and has 0% finding FPR. A recall-oriented finding threshold is constrained by validation false positives, while a separate top-one-percent threshold creates the priority queue.
 
@@ -31,7 +31,7 @@ Explainability connects raw event fields to 32 engineered signals, two anomaly s
 
 Cold start and drift are observable states rather than hidden special cases. Holdout profiles evolve without label access, and production profiles use low-risk trust gating to limit poisoning.
 
-System design is runnable on a laptop and has clear production seams. The repeatable benchmark measures sequential per-event scoring through all five anomaly forests, temporal reconstruction, classifier, risk, and explanation layers.
+System design is runnable on a laptop and has clear production seams. Sequence history, profiles and drift windows persist outside worker memory. A real Uvicorn/TCP benchmark measures authentication, validation, feature extraction, inference, SQLite-WAL transactions and responses under 1/4/8 entity-partition queues. The sequential result is 194/229/242 ms P50/P95/P99 at 5.10 events/s; all concurrent runs have zero server errors, zero ordering violations and expected 409/422/401 failure handling. Kafka/Redpanda, Redis, PostgreSQL, ClickHouse/object storage and durable notification substitutions are specified rather than presented as already deployed.
 
 ## Demo narrative
 
@@ -48,5 +48,6 @@ python backend/scripts/generate_data.py --seed 42 --users 400 --events-per-user 
 python backend/scripts/train_models.py --contamination 0.03
 python backend/scripts/evaluate_models.py
 python backend/scripts/benchmark_inference.py --events 1000 --warmup 100
+python backend/scripts/benchmark_system.py --events 60 --concurrency 1,4,8
 pytest backend/tests -q
 ```

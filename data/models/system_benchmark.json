@@ -1,0 +1,196 @@
+{
+  "benchmark": "Phase 3 concurrent end-to-end HTTP ingestion",
+  "events_per_run": 60,
+  "concurrency_levels": [
+    1,
+    4,
+    8
+  ],
+  "runs": [
+    {
+      "path": "real TCP HTTP -> authentication -> validation -> feature extraction -> IF/GRU/RF inference -> SQLite WAL transaction -> response",
+      "server": "one Uvicorn process; scoring offloaded to worker threads",
+      "state": "persistent SQLite profiles, prediction sequence history, and drift windows",
+      "model_version": "v20260726-073744",
+      "requested_events": 60,
+      "successful_events": 60,
+      "failed_events": 0,
+      "concurrency": 1,
+      "unique_entities": 59,
+      "wall_seconds": 11.754594392999934,
+      "throughput_events_per_second": 5.1043871012453685,
+      "http_latency_ms": {
+        "p50": 193.6573015009344,
+        "p95": 229.3608978005068,
+        "p99": 242.33397152011088,
+        "mean": 195.7489807334241,
+        "minimum": 164.22306099957495,
+        "maximum": 253.3997000009549
+      },
+      "server_pipeline_latency_ms": {
+        "p50": 185.24632749995362,
+        "p95": 220.1122160986415,
+        "p99": 234.7629702997255,
+        "mean": 186.58203679991252,
+        "minimum": 155.63856699918688,
+        "maximum": 246.41666800016537
+      },
+      "status_counts": {
+        "200": 60
+      },
+      "entity_ordering": {
+        "strategy": "one sequential queue per entity-keyed partition",
+        "partition_queues": 1,
+        "partition_loads": [
+          60
+        ],
+        "violations": 0
+      },
+      "failure_handling": {
+        "duplicate_event": {
+          "expected": 409,
+          "observed": 409,
+          "passed": true
+        },
+        "schema_validation": {
+          "expected": 422,
+          "observed": 422,
+          "passed": true
+        },
+        "authentication": {
+          "expected": 401,
+          "observed": 401,
+          "passed": true
+        },
+        "server_errors": 0
+      }
+    },
+    {
+      "path": "real TCP HTTP -> authentication -> validation -> feature extraction -> IF/GRU/RF inference -> SQLite WAL transaction -> response",
+      "server": "one Uvicorn process; scoring offloaded to worker threads",
+      "state": "persistent SQLite profiles, prediction sequence history, and drift windows",
+      "model_version": "v20260726-073744",
+      "requested_events": 60,
+      "successful_events": 60,
+      "failed_events": 0,
+      "concurrency": 4,
+      "unique_entities": 59,
+      "wall_seconds": 13.937760924000031,
+      "throughput_events_per_second": 4.304852144269702,
+      "http_latency_ms": {
+        "p50": 912.7799210000376,
+        "p95": 1152.622704651094,
+        "p99": 1232.2342942498287,
+        "mean": 885.0838397001098,
+        "minimum": 188.0134579987498,
+        "maximum": 1261.6234480010462
+      },
+      "server_pipeline_latency_ms": {
+        "p50": 778.9404444993124,
+        "p95": 1021.4122960007444,
+        "p99": 1066.948689670098,
+        "mean": 761.3859818332154,
+        "minimum": 182.93690700011211,
+        "maximum": 1117.2933819998434
+      },
+      "status_counts": {
+        "200": 60
+      },
+      "entity_ordering": {
+        "strategy": "one sequential queue per entity-keyed partition",
+        "partition_queues": 4,
+        "partition_loads": [
+          15,
+          13,
+          14,
+          18
+        ],
+        "violations": 0
+      },
+      "failure_handling": {
+        "duplicate_event": {
+          "expected": 409,
+          "observed": 409,
+          "passed": true
+        },
+        "schema_validation": {
+          "expected": 422,
+          "observed": 422,
+          "passed": true
+        },
+        "authentication": {
+          "expected": 401,
+          "observed": 401,
+          "passed": true
+        },
+        "server_errors": 0
+      }
+    },
+    {
+      "path": "real TCP HTTP -> authentication -> validation -> feature extraction -> IF/GRU/RF inference -> SQLite WAL transaction -> response",
+      "server": "one Uvicorn process; scoring offloaded to worker threads",
+      "state": "persistent SQLite profiles, prediction sequence history, and drift windows",
+      "model_version": "v20260726-073744",
+      "requested_events": 60,
+      "successful_events": 60,
+      "failed_events": 0,
+      "concurrency": 8,
+      "unique_entities": 59,
+      "wall_seconds": 14.075835782001377,
+      "throughput_events_per_second": 4.262624325066464,
+      "http_latency_ms": {
+        "p50": 1483.7587215006351,
+        "p95": 2705.0012561515355,
+        "p99": 4511.239349059511,
+        "mean": 1607.1275624335005,
+        "minimum": 191.87593099923106,
+        "maximum": 6719.109834999472
+      },
+      "server_pipeline_latency_ms": {
+        "p50": 1171.7473959988638,
+        "p95": 1970.7432657005484,
+        "p99": 2042.4246440897875,
+        "mean": 1164.218999966609,
+        "minimum": 182.15933600004064,
+        "maximum": 2083.7580669995077
+      },
+      "status_counts": {
+        "200": 60
+      },
+      "entity_ordering": {
+        "strategy": "one sequential queue per entity-keyed partition",
+        "partition_queues": 8,
+        "partition_loads": [
+          8,
+          6,
+          4,
+          13,
+          7,
+          7,
+          10,
+          5
+        ],
+        "violations": 0
+      },
+      "failure_handling": {
+        "duplicate_event": {
+          "expected": 409,
+          "observed": 409,
+          "passed": true
+        },
+        "schema_validation": {
+          "expected": 422,
+          "observed": 422,
+          "passed": true
+        },
+        "authentication": {
+          "expected": 401,
+          "observed": 401,
+          "passed": true
+        },
+        "server_errors": 0
+      }
+    }
+  ],
+  "interpretation": "SQLite is intentionally retained for the demo; concurrency results expose its serialized-write and single-host limits rather than being extrapolated as production capacity."
+}

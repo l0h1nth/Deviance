@@ -82,7 +82,7 @@ def test_drift_window_progress_is_trusted_only(tmp_path):
     from sqlalchemy.orm import sessionmaker
     from app.database.session import Base
     engine = create_engine(f"sqlite:///{tmp_path/'progress.db'}"); Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine)(); DriftService._windows.clear(); service = DriftService(db)
+    db = sessionmaker(bind=engine)(); service = DriftService(db)
     values = {"access_hour": 9, "location_novelty_score": 0, "new_device_score": 0,
               "download_volume_zscore": 0, "session_duration_zscore": 0, "anomaly_score": 0}
     for _ in range(12): service.observe("trusted-user", values)
@@ -97,7 +97,7 @@ def test_access_hour_shift_creates_drift_record(tmp_path):
     from app.database.models import DriftEventRecord
     from app.database.session import Base
     engine = create_engine(f"sqlite:///{tmp_path/'hour-drift.db'}"); Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine)(); DriftService._windows.clear(); service = DriftService(db)
+    db = sessionmaker(bind=engine)(); service = DriftService(db)
     stable = {"access_hour": 9.0}
     shifted = {"access_hour": 19.0}
     for _ in range(20): service.observe("shift-user", stable)

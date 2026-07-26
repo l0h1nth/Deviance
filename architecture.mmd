@@ -10,24 +10,40 @@ flowchart LR
     SCALE --> GRU[GRU sequence reconstruction]
     JOIN --> RF[Balanced Random Forest]
     RF --> CAL[Validation sigmoid calibration]
-    IF --> BUNDLE[(Schema v2 model bundle)]
+    IF --> BUNDLE[(Schema v3 model bundle)]
     GRU --> BUNDLE
     CAL --> BUNDLE
   end
 
   subgraph Runtime[Near-real-time scoring]
-    SOURCE[Auth / API / device telemetry] --> VALIDATE[Pydantic validation]
-    VALIDATE --> PROFILE[Entity → device → peer → global baseline]
+    SOURCE[Auth / API / device telemetry] --> VALIDATE[Auth + Pydantic + idempotency]
+    VALIDATE --> PARTITION[entity_id stream key]
+    PARTITION --> PROFILE[Durable entity → device → peer → global baseline]
     PROFILE --> LIVEFE[Same 32-feature pipeline]
     BUNDLE --> LIVEFE
     LIVEFE --> SCORE[Domain IF ensemble + GRU + selected calibrated classifier]
     SCORE --> RISK[Weighted risk + explanations]
     RISK --> INCIDENT[15-minute incident correlation]
-    INCIDENT --> DB[(Events / predictions / incidents / feedback)]
-    RISK --> DRIFT[Trusted-only drift windows]
+    INCIDENT --> DB[(Events / predictions / incidents / profiles)]
+    DB --> SEQSTATE[Durable 12-event sequence state]
+    RISK --> DRIFT[(Durable trusted-only drift windows)]
     INCIDENT --> SSE[Authenticated SSE]
     SSE --> UI[React SOC dashboard]
     UI --> FEEDBACK[Analyst disposition]
     FEEDBACK --> DB
     FEEDBACK --> PROFILE
+  end
+
+  subgraph LongTerm[Daily behavioral ranking]
+    DB --> ENRICH[32 features + 4 IF + 6 RF]
+    ENRICH --> DAILY[Per-entity daily p95]
+    DAILY --> ENTITYGRU[30-day EntityBehaviorGRU]
+    ENTITYGRU --> RANK[Ranked identity risk]
+    RANK --> UI
+  end
+
+  subgraph Production[Scale-out contract]
+    PARTITION -.-> KAFKA[Kafka / Redpanda partitions]
+    PROFILE -.-> REDIS[Redis / feature store]
+    DB -.-> POSTGRES[PostgreSQL + ClickHouse]
   end

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     minimum_peer_history: int = 25
     profile_update_max_risk: float = 29.0
     max_batch_size: int = 500
+    stream_partition_count: int = 32
     random_seed: int = 42
     admin_username: str = "admin"
     admin_password: str = "admin"

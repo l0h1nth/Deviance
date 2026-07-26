@@ -89,17 +89,17 @@ Each result includes the observed feature, expected baseline, normalized deviati
 
 1. A signed administrator token authenticates ingestion.
 2. Pydantic rejects unknown fields, invalid ranges, naive timestamps, and excessively future timestamps.
-3. The service checks event-id idempotency and loads recent entity/IP history.
+3. The service checks event-id idempotency, assigns the stable `entity_id` stream key/partition, and loads recent entity/IP history from durable state.
 4. It selects an entity/device/peer/global baseline and extracts 32 schema-3 features.
 5. The active bundle applies the scaler, five normal-only Isolation Forests, GRU, and the validation-selected calibrated classifier.
 6. The risk service composes score, severity, evidence, rationale, and response actions.
-7. Event and prediction records are persisted.
+7. Event, features, prediction, profile changes, and any correlated finding are committed transactionally.
 8. Findings crossing the threshold are correlated by entity, predicted class, and 15-minute bucket. The incident keeps its event count and maximum-risk anchor.
-9. Trusted values feed the drift monitor; scored events and status changes are broadcast through authenticated SSE.
+9. Trusted values feed durable drift windows; scored events and status changes are broadcast through authenticated SSE.
 
 ## Persistence
 
-SQLite tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, durable drift windows, drift findings, and model-run history. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty schema-3-compatible database.
+SQLite-WAL tables store entities, devices, events, predictions, incident alerts, analyst feedback, behavior profiles, durable drift windows, drift findings, and model-run history. Event-GRU history is reconstructed from ordered persisted prediction vectors through `SequenceStateStore`; concept-drift windows have no process-memory authority. Raw validated events are retained as JSON alongside queryable correlation columns. A fresh hackathon run starts with an empty schema-3-compatible database.
 
 ## Drift
 
@@ -107,17 +107,16 @@ Trusted-only rolling 20-event reference/current windows monitor circular access 
 
 ## Scalability path
 
-The current system deliberately uses SQLite and in-process state for a reproducible solo demo. Scale-out boundaries are already explicit:
+The solo deployment deliberately uses one Uvicorn process and SQLite-WAL, but runtime identity state is durable and the scale-out boundaries are executable:
 
-- Put Kafka/Redpanda or a durable managed stream before ingestion.
-- Partition by entity ID so sequence order is stable.
-- Keep window/profile state in Redis or a feature store.
-- Replace SQLite with partitioned PostgreSQL/ClickHouse and explicit retention.
-- Serve signed artifacts from a registry and horizontally scale stateless inference workers.
-- Use a durable notification bus/WebSocket tier rather than process-local SSE.
-- Add SSO/RBAC, TLS, rate limits, immutable audit storage, OpenTelemetry, dead-letter/replay, and blue/green model approval.
+- Authenticated ingestion offloads synchronous scoring to worker threads so the event loop remains responsive.
+- Every response exposes `entity_id` as the stream key plus a stable configured partition number.
+- Benchmark clients and production consumers execute one ordered queue per partition and parallelize only across partitions.
+- `SequenceStateStore`, profiles, and concept-drift windows survive worker/process restarts in SQL.
+- `/api/system/design` exposes the partition/state contract and demo-to-production substitutions.
+- Production replaces direct fan-out with Kafka/Redpanda, hot SQL reads with Redis/feature-store windows, SQLite with partitioned PostgreSQL plus ClickHouse/object storage, and local SSE with durable findings pub/sub.
 
-See [SCALABILITY_REPORT.md](SCALABILITY_REPORT.md) for the measured single-process baseline.
+The measured full TCP HTTP matrix is 194/229/242 ms P50/P95/P99 at one queue and 5.10 events/s. Four and eight local threads add contention without throughput, proving that scale must come from independent entity-partition consumers rather than unordered shared-state threading. See [SCALABILITY_REPORT.md](SCALABILITY_REPORT.md) for measurements, failure probes, topology, backpressure, replay and observability policy.
 
 ## Security limitations
 

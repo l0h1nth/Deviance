@@ -14,6 +14,8 @@ from app.schemas.events import AccessEvent
 from app.services.drift_service import DriftService
 from app.services.profile_service import ProfileService, is_cold_start_baseline
 from app.services.risk_service import RiskService
+from app.services.partitioning import partition_for_entity, partition_key
+from app.services.state_service import SequenceStateStore
 
 
 class PredictionService:
@@ -26,6 +28,7 @@ class PredictionService:
             self.__class__._bundle.validate(self.pipeline.names)
         self.bundle = self.__class__._bundle
         self.profiles = ProfileService(db, self.bundle.bootstrap_profiles)
+        self.sequence_state = SequenceStateStore(db)
 
     @classmethod
     def reload(cls): cls._bundle = None
@@ -40,11 +43,9 @@ class PredictionService:
         return history
 
     def _sequence_vectors(self, event: AccessEvent) -> np.ndarray:
-        rows = list(self.db.scalars(select(PredictionRecord).join(PredictionRecord.event)
-                    .where(EventRecord.entity_id == event.entity_id, EventRecord.timestamp < event.timestamp)
-                    .order_by(EventRecord.timestamp.desc()).limit(self.bundle.sequence_detector.window_size)))
-        rows.reverse()
-        return np.asarray([[row.features.get(name, 0.0) for name in self.pipeline.names] for row in rows], dtype=float)
+        return self.sequence_state.previous_vectors(
+            event.entity_id, event.timestamp, self.pipeline.names, self.bundle.sequence_detector.window_size
+        )
 
     def process(self, event: AccessEvent, trusted_override: bool = False) -> dict:
         started = perf_counter()
@@ -152,4 +153,6 @@ class PredictionService:
             "feature_evidence": feature_evidence, "risk_composition": risk_data["risk_composition"],
             "event": event.model_dump(mode="json"), "trusted": event_record.trusted,
             "trust_source": "pre_reviewed_synthetic_drift" if trusted_override else "automatic_low_risk" if automatically_trusted else None,
+            "stream_partition_key": partition_key(event.entity_id),
+            "stream_partition": partition_for_entity(event.entity_id, self.settings.stream_partition_count),
         }

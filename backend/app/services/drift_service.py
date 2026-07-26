@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import defaultdict
 from datetime import datetime, timezone
 from math import atan2, cos, exp, pi, sin
 from statistics import mean, pstdev
@@ -87,9 +87,6 @@ class DriftService:
     Detection freezes the affected signal until an analyst approves or rejects
     adaptation. Stable windows roll forward automatically; detected windows do not.
     """
-
-    # Compatibility/debug mirror. Persistence and API reads use DriftWindowRecord.
-    _windows: dict[str, deque] = defaultdict(lambda: deque(maxlen=REFERENCE_SIZE + CURRENT_SIZE))
 
     def __init__(self, db: Session):
         self.db = db
@@ -180,8 +177,6 @@ class DriftService:
                 record.current_values = current[-CURRENT_SIZE:]
                 record.status = "collecting_current"
 
-            mirror = self._windows[self._key(subject_id, feature)]
-            mirror.clear(); mirror.extend([*record.reference_values, *record.current_values])
             if len(record.current_values) < CURRENT_SIZE:
                 continue
 

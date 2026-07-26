@@ -49,3 +49,5 @@ class PredictionResponse(BaseModel):
     event: dict
     trusted: bool
     trust_source: str | None = None
+    stream_partition_key: str
+    stream_partition: int = Field(ge=0)
